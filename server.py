@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import nltk.downloader
 import torch
 import torchaudio
 from flask import Flask, request, jsonify, send_file
@@ -16,9 +17,10 @@ import nltk # Needed for sentence tokenization in the generator
 # Ensure NLTK data is available (might need a one-time download)
 try:
     nltk.data.find('tokenizers/punkt')
-except nltk.downloader.DownloadError:
+except Exception:
     print("NLTK 'punkt' tokenizer not found. Downloading...")
     nltk.download('punkt', quiet=True)
+    nltk.download('punkt_tab')
     print("'punkt' downloaded.")
 
 
@@ -198,7 +200,7 @@ def text_to_speech():
                     "language": language,
                     "emotion": emotion_list, # Pass the list directly
                     "pitch_std": pitch_std,
-                    "vq_score": vq_score, # Pass scalar values
+                    #"vq_score": vq_score, # Pass scalar values
                     "fmax": fmax,
                     "speaking_rate": speaking_rate,
                     "dnsmos_ovrl": dnsmos_ovrl,
@@ -215,7 +217,7 @@ def text_to_speech():
             chunk_schedule=[17, *range(9, 100)],
             chunk_overlap=2, # From example.py
             cfg_scale=cfg_scale, # Pass generation params
-            unconditional_keys=unconditional_keys, # Pass uncond keys
+            #unconditional_keys=unconditional_keys, # Pass uncond keys
             # Pass sampling params directly
             sampling_params=dict(
                 top_p=top_p,
