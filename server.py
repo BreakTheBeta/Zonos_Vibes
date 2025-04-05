@@ -233,8 +233,6 @@ def text_to_speech():
             )
 
             # --- Decode to Waveform for the current chunk ---
-            wav_out_chunk = model.autoencoder.decode(codes).cpu().detach()
-            # --- Decode to Waveform for the current chunk ---
             wav_out_chunk_tensor = model.autoencoder.decode(codes).cpu().detach()
             print(f"Chunk {i+1} audio generated (shape: {wav_out_chunk_tensor.shape}).")
 
