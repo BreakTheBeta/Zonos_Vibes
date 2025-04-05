@@ -19,9 +19,10 @@ def _base_clean_text(text: str) -> str:
     text = re.sub(r'\s+', ' ', text).strip()
 
     # 2. Replace markdown code blocks
-    text = re.sub(r'```.*?```', ' Code block content ', text, flags=re.DOTALL)
-    text = re.sub(r'`[^`]+`', ' Code block content ', text)
+    text = re.sub(r'```.*?```', ' File: ', text, flags=re.DOTALL)
+    text = re.sub(r'`[^`]+`', ' File: ', text)
     text = re.sub(r'\s+', ' ', text).strip() # Normalize again
+
 
     # Optional: Further cleanups can be added here
     return text
@@ -41,6 +42,8 @@ def clean_and_split_text(text: str, max_seconds: float = MAX_CHUNK_SECONDS) -> l
     sentences = re.split(r'(?<=[.!?])\s+', base_cleaned_text)
     sentences = [s.strip() for s in sentences if s.strip()] # Remove empty strings
 
+    print("Cleaned Ouput:", base_cleaned_text)
+
     chunks = []
     current_chunk = ""
     current_chunk_time = 0.0
@@ -59,17 +62,17 @@ def clean_and_split_text(text: str, max_seconds: float = MAX_CHUNK_SECONDS) -> l
                 sub_sentence_time = estimate_reading_time_seconds(sub_sentence)
                 # If the current chunk is not empty, finalize it
                 if current_chunk:
-                    chunks.append(f"Start... {current_chunk.strip()}... End.")
+                    chunks.append(f"Stararart... {current_chunk.strip()}... Stararat.")
                     current_chunk = ""
                     current_chunk_time = 0.0
                 # Add the long sub-sentence as its own chunk
-                chunks.append(f"Start... {sub_sentence.strip()}... End.")
+                chunks.append(f"Stararart... {sub_sentence.strip()}... Stararat.")
             continue # Move to the next original sentence
 
         # Check if adding the current sentence exceeds the max time
         if current_chunk and current_chunk_time + sentence_time > max_seconds:
             # Finalize the current chunk
-            chunks.append(f"Start... {current_chunk.strip()}... End.")
+            chunks.append(f"Stararart... {current_chunk.strip()}... Stararart.")
             # Start a new chunk with the current sentence
             current_chunk = sentence
             current_chunk_time = sentence_time

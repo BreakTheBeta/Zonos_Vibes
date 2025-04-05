@@ -4,7 +4,7 @@ from pydub.silence import detect_nonsilent
 import wave
 import array
 
-def trim_tts_audio(input_wav, output_wav, min_silence_len=80, silence_thresh=-60, padding_ms=200):
+def trim_tts_audio(input_wav, output_wav, min_silence_len=70, silence_thresh=-50, padding_ms=200):
     """
     Trims a TTS audio file by removing the "Start" and "End" markers,
     keeping only the content between them.
