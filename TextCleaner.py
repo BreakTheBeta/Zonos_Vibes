@@ -24,7 +24,7 @@ def clean_text_for_tts(text: str) -> str:
     # 3. Add start/end markers to the entire block
     # Ensure there's content before adding markers
     if text:
-        cleaned_text = f"Start. {text}. End."
+        cleaned_text = f"Start... {text}... End."
     else:
         cleaned_text = "" # Return empty if input was empty/whitespace only
 

@@ -8,8 +8,7 @@ SERVER_URL = "http://192.168.1.128:5000/tts"
 
 TEST_TEXT = "This is an integration test for the TTS server. End."
 TEST_TEXT = """
-Fed only acts on hard data and predictions on hard data. They don't respond to politics. It's by design, if they did otherwise it would jeopardize fed independence. JPow made that point very clearly in the speech and I believe to address these sorts of calls to action.
-The fed isn't acting until blood is in the streets, one way or the other; and stagflation implies hike. End '
+This OCR system is specifically designed to extract structured data from complex educational materials—such as exam papers—in a format optimized for machine learning (ML) training. It supports multilingual text, mathematical formulas, tables, diagrams, and charts, making it ideal for creating high-quality training datasets.
 '"""
 
 # --- Speaker/Prefix ---
@@ -17,13 +16,14 @@ TEST_SPEAKER_PATH = "short.wav" # Use an existing audio file for speaker cloning
 TEST_PREFIX_PATH = "assets/silence_100ms.wav" # Optional: Audio to continue from
 
 # --- Conditioning Parameters ---
-TEST_EMOTIONS = [1.0, 0.05, 0.05, 0.05, 0.05, 0.05, 0.1, 0.2] # Happiness, Sadness, Disgust, Fear, Surprise, Anger, Other, Neutral
+# Happiness, Sadness, Disgust, Fear, Surprise, Anger, Other, Neutral
+TEST_EMOTIONS = [0.75, 0.35, 0.05, 0.05, 0.55, 0.95, 0.1, 0.2] 
 TEST_VQ_SCORE = 0.78
-TEST_FMAX = 24000.0
+TEST_FMAX = 20000.0
 TEST_PITCH_STD = 45.0
 TEST_SPEAKING_RATE = 15.0
 TEST_DNSMOS = 4.0
-TEST_SPEAKER_NOISED = False # Denoise speaker embedding?
+TEST_SPEAKER_NOISED = True # Denoise speaker embedding?
 TEST_LANGUAGE = "en-us" # Language code
 
 # --- Generation Parameters ---
