@@ -11,11 +11,21 @@ import json # Added for pretty printing request
 import zipfile # Added for returning multiple files
 import tempfile # Added for temporary files during trimming
 import os # Re-importing for clarity, used with tempfile
+import nltk # Needed for sentence tokenization in the generator
 
-from TextCleaner import clean_and_split_text # Import the NEW cleaning and splitting function
+# Ensure NLTK data is available (might need a one-time download)
+try:
+    nltk.data.find('tokenizers/punkt')
+except nltk.downloader.DownloadError:
+    print("NLTK 'punkt' tokenizer not found. Downloading...")
+    nltk.download('punkt', quiet=True)
+    print("'punkt' downloaded.")
+
+
+from TextCleaner import clean_text # Import the updated cleaning function
 from AudioCleaner import trim_tts_audio # Import the audio trimming function
 from zonos.model import Zonos
-from zonos.conditioning import make_cond_dict, supported_language_codes
+from zonos.conditioning import make_cond_dict, supported_language_codes # Keep make_cond_dict for structure reference if needed
 from zonos.utils import DEFAULT_DEVICE as device
 
 # --- Configuration ---
@@ -40,7 +50,7 @@ DEFAULT_QUADRATIC = 0.00
 DEFAULT_TOP_P = 0.0
 DEFAULT_TOP_K = 0
 DEFAULT_MIN_P = 0.0
-MAX_NEW_TOKENS = 86 * 30 # Default max length
+# MAX_NEW_TOKENS removed, stream handles length
 
 # --- Global Variables ---
 MODEL = None
@@ -101,7 +111,7 @@ def text_to_speech():
         text = data.get('text')
         language = data.get('language', DEFAULT_LANGUAGE)
         speaker_audio_path = data.get('speaker_audio_path')
-        prefix_audio_path = data.get('prefix_audio_path') # Optional
+        # prefix_audio_path removed
 
         # Conditioning
         emotion_list = data.get('emotion', DEFAULT_EMOTIONS)
@@ -126,8 +136,7 @@ def text_to_speech():
         top_k = int(data.get('top_k', DEFAULT_TOP_K))
         min_p = float(data.get('min_p', DEFAULT_MIN_P))
 
-        # New flag to control output format
-        combine_chunks = data.get('combine_chunks', True) # Default to combining
+        # combine_chunks removed
 
     except (ValueError, TypeError) as e:
         return jsonify({"error": f"Invalid parameter type: {e}"}), 400
@@ -148,192 +157,153 @@ def text_to_speech():
     try:
         model = load_model() # Ensure model is loaded
 
-        # --- Clean and Split Input Text ---
-        print(f"Original text: {text}")
-        text_chunks = clean_and_split_text(text) # Use the new function
-        if not text_chunks:
-             return jsonify({"error": "Text resulted in empty chunks after cleaning."}), 400
-        print(f"Cleaned and split into {len(text_chunks)} chunks.")
-        for i, chunk in enumerate(text_chunks):
-            print(f"  Chunk {i+1}: {chunk}")
+        # --- Clean Input Text ---
+        print(f"Original text length: {len(text)}")
+        cleaned_text = clean_text(text) # Use the new function
+        if not cleaned_text:
+             return jsonify({"error": "Text resulted in empty string after cleaning."}), 400
+        print(f"Cleaned text length: {len(cleaned_text)}")
+        # print(f"Cleaned text: {cleaned_text}") # Optional: print cleaned text
 
         # --- Prepare Inputs (Common) ---
         # Speaker Embedding
         speaker_embedding = get_speaker_embedding(speaker_audio_path)
+        # Prefix audio logic removed
 
-        # Prefix Audio Codes (Optional)
-        audio_prefix_codes = None
-        if prefix_audio_path and os.path.exists(prefix_audio_path):
-            print(f"Loading prefix audio: {prefix_audio_path}")
-            wav_prefix, sr_prefix = torchaudio.load(prefix_audio_path)
-            wav_prefix = wav_prefix.mean(0, keepdim=True) # Ensure mono
-            wav_prefix = model.autoencoder.preprocess(wav_prefix, sr_prefix)
-            wav_prefix = wav_prefix.to(device, dtype=torch.float32)
-            audio_prefix_codes = model.autoencoder.encode(wav_prefix.unsqueeze(0))
-            print("Prefix audio processed.")
-        elif prefix_audio_path:
-            print(f"Warning: Prefix audio path specified but not found: {prefix_audio_path}")
-
-        # --- Generate Audio Chunk by Chunk ---
-        all_wav_out_parts = []
-        current_prefix_codes = audio_prefix_codes # Use provided prefix only for the first chunk
-
-        # Seed Handling: Set seed once before the loop based on request params
+        # --- Seed Handling ---
         if randomize_seed:
             seed = torch.randint(0, 2**32 - 1, (1,)).item()
             print(f"Using random seed: {seed}")
         else:
             print(f"Using fixed seed: {seed}")
-        torch.manual_seed(seed) # Set the seed once
+        torch.manual_seed(seed) # Set the seed
 
-        for i, chunk_text in enumerate(text_chunks):
-            print(f"\n--- Processing Chunk {i+1}/{len(text_chunks)} ---")
-            print(f"Text: {chunk_text}")
+        # --- Define Generator for model.stream ---
+        def create_cond_generator():
+            # Split cleaned text into sentences for streaming
+            # This mimics the example.py approach for partitioning long text
+            sentences = nltk.sent_tokenize(cleaned_text)
+            print(f"Split cleaned text into {len(sentences)} sentences for streaming.")
 
-            # Note: Seed is already set. If different seed per chunk is desired, modify here.
+            # Yield conditioning dictionary for each sentence
+            for sentence_text in sentences:
+                if not sentence_text.strip(): # Skip empty sentences
+                    continue
+                print(f"  Yielding sentence: {sentence_text[:80]}...") # Log start of sentence
+                # Note: Reusing most parameters for each sentence.
+                # If per-sentence variation (e.g., emotion) is needed, modify here.
+                yield {
+                    "text": sentence_text.strip(),
+                    "speaker": speaker_embedding, # Use the loaded embedding
+                    "language": language,
+                    "emotion": emotion_list, # Pass the list directly
+                    "pitch_std": pitch_std,
+                    "vq_score": vq_score, # Pass scalar values
+                    "fmax": fmax,
+                    "speaking_rate": speaking_rate,
+                    "dnsmos_ovrl": dnsmos_ovrl,
+                    "speaker_noised": speaker_noised,
+                    # Add other relevant conditioning params if needed by model.stream's internal make_cond_dict
+                }
 
-            # Tensors for conditioning (recreate for clarity, could optimize)
-            emotion_tensor = torch.tensor(emotion_list, device=device).unsqueeze(0)
-            vq_tensor = torch.tensor([vq_score] * 8, device=device).unsqueeze(0)
+        # --- Generate Audio using Streaming ---
+        print("\nStarting audio generation stream...")
+        stream_generator = model.stream(
+            cond_dicts_generator=create_cond_generator(),
+            # Define chunk schedule: start small, increase size (adjust based on hardware/latency needs)
+            # Using the schedule from example.py as a starting point
+            chunk_schedule=[17, *range(9, 100)],
+            chunk_overlap=2, # From example.py
+            cfg_scale=cfg_scale, # Pass generation params
+            unconditional_keys=unconditional_keys, # Pass uncond keys
+            # Pass sampling params directly
+            sampling_params=dict(
+                top_p=top_p,
+                top_k=top_k,
+                min_p=min_p,
+                linear=linear,
+                conf=confidence,
+                quad=quadratic
+            ),
+            # Add other necessary params for model.stream if any
+        )
 
-            # --- Prepare Conditioning for the current chunk ---
-            cond_dict = make_cond_dict(
-                text=chunk_text, # Use the current chunk's text
-                language=language,
-                speaker=speaker_embedding, # Re-use the same speaker embedding
-                emotion=emotion_tensor,
-                vqscore_8=vq_tensor,
-                fmax=fmax,
-                pitch_std=pitch_std,
-                speaking_rate=speaking_rate,
-                dnsmos_ovrl=dnsmos_ovrl,
-                speaker_noised=speaker_noised,
-                device=device,
-                unconditional_keys=unconditional_keys,
-            )
-            conditioning = model.prepare_conditioning(cond_dict)
+        # --- Accumulate Audio Chunks ---
+        audio_chunks = []
+        print("Accumulating audio chunks from stream...")
+        for i, audio_chunk in enumerate(stream_generator):
+            print(f"  Received audio chunk {i+1} (shape: {audio_chunk.shape})")
+            audio_chunks.append(audio_chunk.cpu()) # Move to CPU as received
+        print(f"Finished accumulating {len(audio_chunks)} audio chunks.")
 
-            # --- Generate Audio Codes for the current chunk ---
-            print(f"Generating audio for chunk {i+1}...")
-            codes = model.generate(
-                prefix_conditioning=conditioning,
-                # Use original prefix only for the first chunk.
-                audio_prefix_codes=current_prefix_codes if i == 0 else None,
-                max_new_tokens=MAX_NEW_TOKENS, # Apply max tokens per chunk
-                cfg_scale=cfg_scale,
-                batch_size=1, # Process one chunk at a time
-                sampling_params=dict(
-                    top_p=top_p,
-                    top_k=top_k,
-                    min_p=min_p,
-                    linear=linear,
-                    conf=confidence,
-                    quad=quadratic
-                ),
-            )
+        if not audio_chunks:
+            return jsonify({"error": "Streaming generated no audio chunks."}), 500
 
-            # --- Decode to Waveform for the current chunk ---
-            wav_out_chunk_tensor = model.autoencoder.decode(codes).cpu().detach()
-            print(f"Chunk {i+1} audio generated (shape: {wav_out_chunk_tensor.shape}).")
+        # --- Concatenate Final Audio ---
+        final_audio_tensor = torch.cat(audio_chunks, dim=-1)
+        sr_out = model.autoencoder.sampling_rate
+        print(f"Concatenated audio shape: {final_audio_tensor.shape}, Sample Rate: {sr_out}")
+        print(f"Total combined audio length: {final_audio_tensor.shape[-1] / sr_out:.2f} seconds")
 
-            # --- Trim the current chunk ---
-            sr_out = model.autoencoder.sampling_rate # Get sample rate (should be constant)
-            wav_numpy_chunk = wav_out_chunk_tensor.squeeze().cpu().numpy()
-            wav_numpy_chunk = np.clip(wav_numpy_chunk, -1.0, 1.0)
-            wav_int16_chunk = (wav_numpy_chunk * 32767).astype(np.int16)
+        # --- Trim Final Combined Audio ---
+        # Convert tensor to numpy int16 for trimming function
+        wav_numpy_full = final_audio_tensor.squeeze().cpu().numpy()
+        wav_numpy_full = np.clip(wav_numpy_full, -1.0, 1.0)
+        wav_int16_full = (wav_numpy_full * 32767).astype(np.int16)
 
-            temp_in_file = None
-            temp_out_file = None
-            trimmed_wav_data = None # To store the trimmed numpy array
-            try:
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_in:
-                    temp_in_file = temp_in.name
-                    scipy.io.wavfile.write(temp_in_file, sr_out, wav_int16_chunk)
-                
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_out:
-                    temp_out_file = temp_out.name
+        temp_in_file = None
+        temp_out_file = None
+        trimmed_wav_data = None
+        try:
+            # Write the full combined audio to a temp file
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_in:
+                temp_in_file = temp_in.name
+                scipy.io.wavfile.write(temp_in_file, sr_out, wav_int16_full)
 
-                print(f"Trimming chunk {i+1}...")
-                trim_tts_audio(temp_in_file, temp_out_file)
-                print(f"Trimming chunk {i+1} complete.")
+            # Create a temp file for the output
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_out:
+                temp_out_file = temp_out.name
 
-                # Read the trimmed data back as numpy array
-                sr_trimmed, trimmed_wav_data = scipy.io.wavfile.read(temp_out_file)
-                if sr_trimmed != sr_out:
-                    print(f"Warning: Sample rate mismatch after trimming chunk {i+1}. Expected {sr_out}, got {sr_trimmed}. Check AudioCleaner.")
-                    # Handle potential resampling or raise error if needed
-                print(f"Chunk {i+1} trimmed data loaded (shape: {trimmed_wav_data.shape}).")
+            print(f"Trimming final combined audio...")
+            trim_tts_audio(temp_in_file, temp_out_file) # Call the trimmer
+            print(f"Trimming complete.")
 
-            except Exception as trim_error:
-                print(f"Error trimming chunk {i+1}: {trim_error}. Using original chunk.")
-                # Fallback: Use the original untrimmed data if trimming fails
-                trimmed_wav_data = wav_int16_chunk 
-            finally:
-                # Clean up temporary files
-                if temp_in_file and os.path.exists(temp_in_file):
-                    os.remove(temp_in_file)
-                if temp_out_file and os.path.exists(temp_out_file):
-                    os.remove(temp_out_file)
-            
-            # Store the (potentially trimmed) numpy array
-            if trimmed_wav_data is not None:
-                all_wav_out_parts.append(trimmed_wav_data)
+            # Read the trimmed data back
+            sr_trimmed, trimmed_wav_data = scipy.io.wavfile.read(temp_out_file)
+            if sr_trimmed != sr_out:
+                print(f"Warning: Sample rate mismatch after trimming. Expected {sr_out}, got {sr_trimmed}.")
+                # Fallback to untrimmed if sample rate changed unexpectedly
+                trimmed_wav_data = wav_int16_full
             else:
-                 print(f"Warning: Failed to get trimmed data for chunk {i+1}, skipping.")
-            # --- End Trimming ---
+                print(f"Final trimmed audio data loaded (shape: {trimmed_wav_data.shape}).")
+                print(f"Final trimmed audio length: {len(trimmed_wav_data) / sr_out:.2f} seconds")
 
-            # Optional: Prepare prefix for the *next* chunk (Advanced)
-            # Needs adjustment if using trimmed audio as prefix
-            # current_prefix_codes = model.autoencoder.encode(trimmed_wav_tensor...) 
 
-        # --- Process Output Based on combine_chunks Flag ---
-        if not all_wav_out_parts: # Now contains numpy arrays
-             return jsonify({"error": "No audio parts were generated or survived trimming."}), 500
+        except Exception as trim_error:
+            print(f"Error trimming final audio: {trim_error}. Returning untrimmed audio.")
+            trimmed_wav_data = wav_int16_full # Fallback to untrimmed data
+        finally:
+            # Clean up temporary files
+            if temp_in_file and os.path.exists(temp_in_file):
+                os.remove(temp_in_file)
+            if temp_out_file and os.path.exists(temp_out_file):
+                os.remove(temp_out_file)
 
-        sr_out = model.autoencoder.sampling_rate # Re-confirm sample rate
+        if trimmed_wav_data is None:
+             return jsonify({"error": "Failed to process audio after trimming."}), 500
 
-        if combine_chunks:
-            # --- Concatenate PRE-TRIMMED Audio Chunks ---
-            print("\nCombining pre-trimmed audio chunks...")
-            # Concatenate the numpy arrays
-            final_wav_numpy = np.concatenate(all_wav_out_parts, axis=0) 
-            print(f"Total combined audio length: {len(final_wav_numpy) / sr_out:.2f} seconds (shape: {final_wav_numpy.shape})")
+        # --- Return Final Trimmed Audio ---
+        # Convert final (potentially trimmed) numpy array to WAV in memory
+        wav_buffer = io.BytesIO()
+        scipy.io.wavfile.write(wav_buffer, sr_out, trimmed_wav_data.astype(np.int16)) # Use the final data
+        wav_buffer.seek(0)
 
-            # Convert to WAV in memory
-            wav_buffer = io.BytesIO()
-            scipy.io.wavfile.write(wav_buffer, sr_out, final_wav_numpy.astype(np.int16)) # Ensure correct dtype
-            wav_buffer.seek(0)
-
-            print("Combined audio generation complete using pre-trimmed chunks.")
-            return send_file(
-                wav_buffer,
-                mimetype='audio/wav',
-                as_attachment=False # Send inline
-            )
-        else:
-            # --- Return PRE-TRIMMED Multiple Chunks as ZIP ---
-            print("\nPackaging pre-trimmed audio chunks into ZIP archive...")
-            zip_buffer = io.BytesIO()
-            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                for i, trimmed_wav_data in enumerate(all_wav_out_parts):
-                    # Write the trimmed numpy chunk to an in-memory WAV buffer
-                    chunk_buffer = io.BytesIO()
-                    scipy.io.wavfile.write(chunk_buffer, sr_out, trimmed_wav_data.astype(np.int16)) # Ensure correct dtype
-                    chunk_buffer.seek(0)
-
-                    # Add the trimmed chunk WAV to the ZIP file
-                    zip_filename = f"output_chunk_{i+1}_trimmed.wav" 
-                    zipf.writestr(zip_filename, chunk_buffer.read())
-                    print(f"Added {zip_filename} (pre-trimmed) to archive.")
-
-            zip_buffer.seek(0)
-            print("ZIP archive created with pre-trimmed chunks.")
-            return send_file(
-                zip_buffer,
-                mimetype='application/zip',
-                as_attachment=True, # Force download
-                download_name='audio_chunks.zip' # Suggest filename
-            )
+        print("Audio generation and processing complete.")
+        return send_file(
+            wav_buffer,
+            mimetype='audio/wav',
+            as_attachment=False # Send inline
+        )
 
     except FileNotFoundError as e:
         print(f"Error: {e}")
