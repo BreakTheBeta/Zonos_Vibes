@@ -9,6 +9,7 @@ import os
 import numpy as np
 import json # Added for pretty printing request
 
+from TextCleaner import clean_text_for_tts # Import the cleaning function
 from zonos.model import Zonos
 from zonos.conditioning import make_cond_dict, supported_language_codes
 from zonos.utils import DEFAULT_DEVICE as device
@@ -140,6 +141,11 @@ def text_to_speech():
     try:
         model = load_model() # Ensure model is loaded
 
+        # --- Clean Input Text ---
+        print(f"Original text: {text}")
+        cleaned_text = clean_text_for_tts(text)
+        print(f"Cleaned text for TTS: {cleaned_text}")
+
         # --- Prepare Inputs ---
         # Speaker Embedding
         speaker_embedding = get_speaker_embedding(speaker_audio_path)
@@ -172,7 +178,7 @@ def text_to_speech():
 
         # --- Prepare Conditioning ---
         cond_dict = make_cond_dict(
-            text=text,
+            text=cleaned_text, # Use the cleaned text
             language=language,
             speaker=speaker_embedding,
             emotion=emotion_tensor,
