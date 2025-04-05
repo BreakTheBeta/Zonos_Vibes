@@ -5,7 +5,7 @@ def clean_text_for_tts(text: str) -> str:
     Cleans and prepares text for a text-to-speech (TTS) model.
 
     - Replaces markdown code blocks with a generic phrase.
-    - Adds 'start dot' and 'end dot' markers to sentences.
+    - Adds 'start dot' and 'end dot' markers to the beginning and end of the entire text block.
     - Normalizes whitespace.
     """
 
@@ -21,30 +21,12 @@ def clean_text_for_tts(text: str) -> str:
     # Normalize spaces again after replacements
     text = re.sub(r'\s+', ' ', text).strip()
 
-
-    # 3. Split into sentences (simple split by ., ?, !)
-    # Use lookbehind and lookahead to keep delimiters attached to sentences
-    # This handles cases like "Mr. Smith" better but still not perfectly.
-    # A more robust sentence tokenizer (like NLTK) could be used for complex cases.
-    sentences = re.split(r'(?<=[.?!])\s+', text)
-
-    processed_sentences = []
-    for sentence in sentences:
-        sentence = sentence.strip()
-        if sentence: # Only process non-empty sentences
-            # Check if sentence already ends with punctuation handled by the split
-            if sentence.endswith(('.', '?', '!')):
-                 # Add markers around the existing sentence and punctuation
-                 processed_sentences.append(f"start dot {sentence} end dot")
-            else:
-                 # If no punctuation (e.g., last sentence fragment), add markers
-                 # We might want to add a default period here, but sticking to reqs
-                 processed_sentences.append(f"start dot {sentence} end dot")
-
-
-    # 4. Join processed sentences
-    # Add spaces between the "end dot" of one sentence and "start dot" of the next.
-    cleaned_text = " ".join(processed_sentences)
+    # 3. Add start/end markers to the entire block
+    # Ensure there's content before adding markers
+    if text:
+        cleaned_text = f"start dot {text} end dot"
+    else:
+        cleaned_text = "" # Return empty if input was empty/whitespace only
 
     # Optional: Further cleanups can be added here
     # e.g., expanding abbreviations, handling numbers, removing special chars
