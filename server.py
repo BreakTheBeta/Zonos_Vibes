@@ -9,8 +9,11 @@ import os
 import numpy as np
 import json # Added for pretty printing request
 import zipfile # Added for returning multiple files
+import tempfile # Added for temporary files during trimming
+import os # Re-importing for clarity, used with tempfile
 
 from TextCleaner import clean_and_split_text # Import the NEW cleaning and splitting function
+from AudioCleaner import trim_tts_audio # Import the audio trimming function
 from zonos.model import Zonos
 from zonos.conditioning import make_cond_dict, supported_language_codes
 from zonos.utils import DEFAULT_DEVICE as device
@@ -261,14 +264,49 @@ def text_to_speech():
             wav_numpy = np.clip(wav_numpy, -1.0, 1.0)
             wav_int16 = (wav_numpy * 32767).astype(np.int16)
 
-            # Convert to WAV in memory
-            wav_buffer = io.BytesIO()
-            scipy.io.wavfile.write(wav_buffer, sr_out, wav_int16)
-            wav_buffer.seek(0)
+            # --- Trim the combined audio ---
+            temp_in_file = None
+            temp_out_file = None
+            wav_buffer = io.BytesIO() # Initialize buffer
+            try:
+                # Create temporary files for input and output of trimming
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_in:
+                    temp_in_file = temp_in.name
+                    # Write the *untrimmed* combined audio to the temp input file
+                    scipy.io.wavfile.write(temp_in_file, sr_out, wav_int16) 
+                
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_out:
+                    temp_out_file = temp_out.name
 
-            print("Combined audio generation complete. Format: PCM 16-bit")
+                print(f"Trimming combined audio (temp in: {temp_in_file}, temp out: {temp_out_file})...")
+                # Call the trimmer
+                trim_tts_audio(temp_in_file, temp_out_file) 
+                print("Combined audio trimming complete.")
+
+                # Read the *trimmed* data into the buffer for sending
+                with open(temp_out_file, 'rb') as f_trimmed:
+                    wav_buffer.write(f_trimmed.read())
+                wav_buffer.seek(0)
+                print("Trimmed audio loaded into response buffer.")
+
+            except Exception as trim_error:
+                print(f"Error trimming combined audio: {trim_error}")
+                # Fallback: Send the untrimmed audio if trimming fails
+                print("Trimming failed. Sending untrimmed audio as fallback.")
+                wav_buffer = io.BytesIO() # Reset buffer
+                scipy.io.wavfile.write(wav_buffer, sr_out, wav_int16) # Write original data
+                wav_buffer.seek(0)
+            finally:
+                # Clean up temporary files
+                if temp_in_file and os.path.exists(temp_in_file):
+                    os.remove(temp_in_file)
+                if temp_out_file and os.path.exists(temp_out_file):
+                    os.remove(temp_out_file)
+            # --- End Trimming ---
+
+            # Send the (potentially trimmed) audio
             return send_file(
-                wav_buffer,
+                wav_buffer, # This now contains trimmed data (or original if trimming failed)
                 mimetype='audio/wav',
                 as_attachment=False # Send inline
             )
@@ -284,14 +322,45 @@ def text_to_speech():
                     wav_int16_chunk = (wav_numpy_chunk * 32767).astype(np.int16)
 
                     # Write chunk to an in-memory WAV buffer
-                    chunk_buffer = io.BytesIO()
-                    scipy.io.wavfile.write(chunk_buffer, sr_out, wav_int16_chunk)
-                    chunk_buffer.seek(0)
+                    # --- Trim the chunk before adding to ZIP ---
+                    temp_in_file = None
+                    temp_out_file = None
+                    try:
+                        # Create temporary files for input and output of trimming
+                        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_in:
+                            temp_in_file = temp_in.name
+                            scipy.io.wavfile.write(temp_in_file, sr_out, wav_int16_chunk)
+                        
+                        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_out:
+                            temp_out_file = temp_out.name
 
-                    # Add the chunk WAV to the ZIP file
-                    zip_filename = f"output_chunk_{i+1}.wav"
-                    zipf.writestr(zip_filename, chunk_buffer.read())
-                    print(f"Added {zip_filename} to archive.")
+                        print(f"Trimming chunk {i+1} (temp in: {temp_in_file}, temp out: {temp_out_file})...")
+                        # Call the trimmer - ignore return values for now
+                        trim_tts_audio(temp_in_file, temp_out_file) 
+                        print(f"Trimming chunk {i+1} complete.")
+
+                        # Read the *trimmed* data
+                        with open(temp_out_file, 'rb') as f_trimmed:
+                            trimmed_data = f_trimmed.read()
+
+                        # Add the *trimmed* chunk WAV to the ZIP file
+                        zip_filename = f"output_chunk_{i+1}_trimmed.wav" # Indicate trimmed
+                        zipf.writestr(zip_filename, trimmed_data)
+                        print(f"Added {zip_filename} to archive.")
+
+                    except Exception as trim_error:
+                        print(f"Error trimming chunk {i+1}: {trim_error}")
+                        # Fallback: Add the untrimmed chunk if trimming fails? Or skip?
+                        # For now, let's log and skip adding the failed chunk to avoid corrupting zip
+                        print(f"Skipping chunk {i+1} due to trimming error.")
+                    finally:
+                        # Clean up temporary files
+                        if temp_in_file and os.path.exists(temp_in_file):
+                            os.remove(temp_in_file)
+                        if temp_out_file and os.path.exists(temp_out_file):
+                            os.remove(temp_out_file)
+                    # --- End Trimming ---
+
 
             zip_buffer.seek(0)
             print("ZIP archive created.")
