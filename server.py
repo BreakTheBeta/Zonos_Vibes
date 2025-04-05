@@ -6,6 +6,7 @@ from flask import Flask, request, jsonify, send_file
 import io
 import scipy.io.wavfile
 import os
+import numpy as np
 
 from zonos.model import Zonos
 from zonos.conditioning import make_cond_dict
@@ -138,12 +139,20 @@ def text_to_speech():
             wav_out = wav_out[0:1, :]
         wav_numpy = wav_out.squeeze().numpy()
 
-        # Convert numpy array to WAV in memory
+        # --- Convert float audio to 16-bit PCM ---
+        # Ensure data is within [-1.0, 1.0] range before scaling
+        wav_numpy = np.clip(wav_numpy, -1.0, 1.0)
+        # Scale to int16 range
+        wav_int16 = (wav_numpy * 32767).astype(np.int16)
+        # --- End Conversion ---
+
+        # Convert numpy array (int16) to WAV in memory
         wav_buffer = io.BytesIO()
-        scipy.io.wavfile.write(wav_buffer, sr_out, wav_numpy)
+        # Use the converted int16 array here
+        scipy.io.wavfile.write(wav_buffer, sr_out, wav_int16)
         wav_buffer.seek(0)
 
-        print("Audio generation complete.")
+        print("Audio generation complete. Format: PCM 16-bit")
         return send_file(
             wav_buffer,
             mimetype='audio/wav',
