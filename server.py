@@ -25,7 +25,7 @@ except Exception:
 
 
 from TextCleaner import clean_text # Import the updated cleaning function
-from AudioCleaner import trim_tts_audio # Import the audio trimming function
+# from AudioCleaner import trim_tts_audio # Import the audio trimming function (REMOVED)
 from zonos.model import Zonos
 from zonos.conditioning import make_cond_dict, supported_language_codes # Keep make_cond_dict for structure reference if needed
 from zonos.utils import DEFAULT_DEVICE as device
@@ -247,60 +247,22 @@ def text_to_speech():
         print(f"Concatenated audio shape: {final_audio_tensor.shape}, Sample Rate: {sr_out}")
         print(f"Total combined audio length: {final_audio_tensor.shape[-1] / sr_out:.2f} seconds")
 
-        # --- Trim Final Combined Audio ---
-        # Convert tensor to numpy int16 for trimming function
+        # --- Trimming Removed ---
+        # The following section that called AudioCleaner.trim_tts_audio has been removed.
+        # We will now directly return the concatenated audio.
+
+        # --- Return Final Concatenated (Untrimmed) Audio ---
+        # Convert final tensor to numpy int16
         wav_numpy_full = final_audio_tensor.squeeze().cpu().numpy()
         wav_numpy_full = np.clip(wav_numpy_full, -1.0, 1.0)
         wav_int16_full = (wav_numpy_full * 32767).astype(np.int16)
 
-        temp_in_file = None
-        temp_out_file = None
-        trimmed_wav_data = None
-        try:
-            # Write the full combined audio to a temp file
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_in:
-                temp_in_file = temp_in.name
-                scipy.io.wavfile.write(temp_in_file, sr_out, wav_int16_full)
-
-            # Create a temp file for the output
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_out:
-                temp_out_file = temp_out.name
-
-            print(f"Trimming final combined audio...")
-            trim_tts_audio(temp_in_file, temp_out_file) # Call the trimmer
-            print(f"Trimming complete.")
-
-            # Read the trimmed data back
-            sr_trimmed, trimmed_wav_data = scipy.io.wavfile.read(temp_out_file)
-            if sr_trimmed != sr_out:
-                print(f"Warning: Sample rate mismatch after trimming. Expected {sr_out}, got {sr_trimmed}.")
-                # Fallback to untrimmed if sample rate changed unexpectedly
-                trimmed_wav_data = wav_int16_full
-            else:
-                print(f"Final trimmed audio data loaded (shape: {trimmed_wav_data.shape}).")
-                print(f"Final trimmed audio length: {len(trimmed_wav_data) / sr_out:.2f} seconds")
-
-
-        except Exception as trim_error:
-            print(f"Error trimming final audio: {trim_error}. Returning untrimmed audio.")
-            trimmed_wav_data = wav_int16_full # Fallback to untrimmed data
-        finally:
-            # Clean up temporary files
-            if temp_in_file and os.path.exists(temp_in_file):
-                os.remove(temp_in_file)
-            if temp_out_file and os.path.exists(temp_out_file):
-                os.remove(temp_out_file)
-
-        if trimmed_wav_data is None:
-             return jsonify({"error": "Failed to process audio after trimming."}), 500
-
-        # --- Return Final Trimmed Audio ---
-        # Convert final (potentially trimmed) numpy array to WAV in memory
+        # Convert numpy array to WAV in memory
         wav_buffer = io.BytesIO()
-        scipy.io.wavfile.write(wav_buffer, sr_out, trimmed_wav_data.astype(np.int16)) # Use the final data
+        scipy.io.wavfile.write(wav_buffer, sr_out, wav_int16_full) # Use the untrimmed data
         wav_buffer.seek(0)
 
-        print("Audio generation and processing complete.")
+        print("Audio generation complete (trimming skipped).")
         return send_file(
             wav_buffer,
             mimetype='audio/wav',

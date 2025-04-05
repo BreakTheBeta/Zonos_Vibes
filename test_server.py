@@ -11,7 +11,11 @@ SERVER_URL = "http://192.168.1.128:5000/tts"
 
 TEST_TEXT = "This is an integration test for the TTS server. End."
 TEST_TEXT = """
-I've corrected the expectations in the failing unit tests in `test_text_cleaner.py`. The tests should now pass as they correctly reflect the behavior of the `_base_clean_text` function, which adds a period after each code block replacement. Please run `make test` again to confirm.
+No other items are to be placed on this table. If SCP-717-1 shows signs of movement, one staff member is to sit at the table and remain in the room with it. The staff member present must turn on the lamp and point at the word "WAIT" on the modified Ouija board, then immediately shut the lamp off. Staff is advised to remain quiet and breathe steadily until relieved.
+
+SCP-717-2 is sealed behind a titanium alloy vault door, lined with a plating of [REDACTED] alloy. It is mounted on the wall behind SCP-717-1. The vault is to remain sealed per mutual agreement. If any whistling is heard from the vault, maintenance must be performed immediately to prevent a breach.
+
+If the SCP-717-2 vault is breached from the far side, it is to be considered a hostile act. Communication with SCP-717 is to immediately cease and staff are to equip weapons to repel invaders.
 '"""
 
 # --- Speaker/Prefix ---
