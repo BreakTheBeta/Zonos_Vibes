@@ -4,7 +4,7 @@ import wave
 import io
 
 # --- Configuration ---
-SERVER_URL = "http://127.0.0.1:5000/tts"
+SERVER_URL = "http://192.168.1.128:5000/tts"
 TEST_TEXT = "This is an integration test for the TTS server."
 # Use an existing audio file in the project directory for the speaker
 TEST_SPEAKER_PATH = "short.wav"
