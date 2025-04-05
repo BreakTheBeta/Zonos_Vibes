@@ -8,7 +8,7 @@ SERVER_URL = "http://192.168.1.128:5000/tts"
 
 TEST_TEXT = "This is an integration test for the TTS server. End."
 TEST_TEXT = """
-This OCR system is specifically designed to extract structured data from complex educational materials—such as exam papers—in a format optimized for machine learning (ML) training. It supports multilingual text, mathematical formulas, tables, diagrams, and charts, making it ideal for creating high-quality training datasets.
+Let me tell you the story when the level 600 school gyatt walked passed me, I was in class drinking my grimace rizz shake from ohio during my rizzonomics class when all of the sudden this crazy ohio bing chilling gyatt got sturdy, past my class. I was watching kai cenat hit the griddy on twitch. This is when I let my rizz take over and I became the rizzard of oz. I screamed, look at this bomboclat gyatt
 '"""
 
 # --- Speaker/Prefix ---
