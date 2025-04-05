@@ -8,8 +8,9 @@ import scipy.io.wavfile
 import os
 import numpy as np
 import json # Added for pretty printing request
+import numpy as np # Ensure numpy is imported
 
-from TextCleaner import clean_text_for_tts # Import the cleaning function
+from TextCleaner import clean_and_split_text # Import the NEW cleaning and splitting function
 from zonos.model import Zonos
 from zonos.conditioning import make_cond_dict, supported_language_codes
 from zonos.utils import DEFAULT_DEVICE as device
@@ -141,12 +142,16 @@ def text_to_speech():
     try:
         model = load_model() # Ensure model is loaded
 
-        # --- Clean Input Text ---
+        # --- Clean and Split Input Text ---
         print(f"Original text: {text}")
-        cleaned_text = clean_text_for_tts(text)
-        print(f"Cleaned text for TTS: {cleaned_text}")
+        text_chunks = clean_and_split_text(text) # Use the new function
+        if not text_chunks:
+             return jsonify({"error": "Text resulted in empty chunks after cleaning."}), 400
+        print(f"Cleaned and split into {len(text_chunks)} chunks.")
+        for i, chunk in enumerate(text_chunks):
+            print(f"  Chunk {i+1}: {chunk}")
 
-        # --- Prepare Inputs ---
+        # --- Prepare Inputs (Common) ---
         # Speaker Embedding
         speaker_embedding = get_speaker_embedding(speaker_audio_path)
 
@@ -163,73 +168,97 @@ def text_to_speech():
         elif prefix_audio_path:
             print(f"Warning: Prefix audio path specified but not found: {prefix_audio_path}")
 
+        # --- Generate Audio Chunk by Chunk ---
+        all_wav_out_parts = []
+        current_prefix_codes = audio_prefix_codes # Use provided prefix only for the first chunk
 
-        # Seed
+        # Seed Handling: Set seed once before the loop based on request params
         if randomize_seed:
             seed = torch.randint(0, 2**32 - 1, (1,)).item()
             print(f"Using random seed: {seed}")
         else:
             print(f"Using fixed seed: {seed}")
-        torch.manual_seed(seed)
+        torch.manual_seed(seed) # Set the seed once
 
-        # Tensors for conditioning
-        emotion_tensor = torch.tensor(emotion_list, device=device).unsqueeze(0) # Add batch dim
-        vq_tensor = torch.tensor([vq_score] * 8, device=device).unsqueeze(0) # Expand and add batch dim
+        for i, chunk_text in enumerate(text_chunks):
+            print(f"\n--- Processing Chunk {i+1}/{len(text_chunks)} ---")
+            print(f"Text: {chunk_text}")
 
-        # --- Prepare Conditioning ---
-        cond_dict = make_cond_dict(
-            text=cleaned_text, # Use the cleaned text
-            language=language,
-            speaker=speaker_embedding,
-            emotion=emotion_tensor,
-            vqscore_8=vq_tensor,
-            fmax=fmax,
-            pitch_std=pitch_std,
-            speaking_rate=speaking_rate,
-            dnsmos_ovrl=dnsmos_ovrl,
-            speaker_noised=speaker_noised,
-            device=device,
-            unconditional_keys=unconditional_keys,
-        )
-        conditioning = model.prepare_conditioning(cond_dict)
+            # Note: Seed is already set. If different seed per chunk is desired, modify here.
 
-        # --- Generate Audio Codes ---
-        print("Generating audio...")
-        codes = model.generate(
-            prefix_conditioning=conditioning,
-            audio_prefix_codes=audio_prefix_codes,
-            max_new_tokens=MAX_NEW_TOKENS,
-            cfg_scale=cfg_scale,
-            batch_size=1,
-            sampling_params=dict(
-                top_p=top_p,
-                top_k=top_k,
-                min_p=min_p,
-                linear=linear,
-                conf=confidence,
-                quad=quadratic
-            ),
-        )
+            # Tensors for conditioning (recreate for clarity, could optimize)
+            emotion_tensor = torch.tensor(emotion_list, device=device).unsqueeze(0)
+            vq_tensor = torch.tensor([vq_score] * 8, device=device).unsqueeze(0)
 
-        # --- Decode to Waveform ---
-        wav_out = model.autoencoder.decode(codes).cpu().detach()
+            # --- Prepare Conditioning for the current chunk ---
+            cond_dict = make_cond_dict(
+                text=chunk_text, # Use the current chunk's text
+                language=language,
+                speaker=speaker_embedding, # Re-use the same speaker embedding
+                emotion=emotion_tensor,
+                vqscore_8=vq_tensor,
+                fmax=fmax,
+                pitch_std=pitch_std,
+                speaking_rate=speaking_rate,
+                dnsmos_ovrl=dnsmos_ovrl,
+                speaker_noised=speaker_noised,
+                device=device,
+                unconditional_keys=unconditional_keys,
+            )
+            conditioning = model.prepare_conditioning(cond_dict)
+
+            # --- Generate Audio Codes for the current chunk ---
+            print(f"Generating audio for chunk {i+1}...")
+            codes = model.generate(
+                prefix_conditioning=conditioning,
+                # Use original prefix only for the first chunk.
+                audio_prefix_codes=current_prefix_codes if i == 0 else None,
+                max_new_tokens=MAX_NEW_TOKENS, # Apply max tokens per chunk
+                cfg_scale=cfg_scale,
+                batch_size=1, # Process one chunk at a time
+                sampling_params=dict(
+                    top_p=top_p,
+                    top_k=top_k,
+                    min_p=min_p,
+                    linear=linear,
+                    conf=confidence,
+                    quad=quadratic
+                ),
+            )
+
+            # --- Decode to Waveform for the current chunk ---
+            wav_out_chunk = model.autoencoder.decode(codes).cpu().detach()
+            all_wav_out_parts.append(wav_out_chunk)
+            print(f"Chunk {i+1} audio generated (shape: {wav_out_chunk.shape}).")
+
+            # Optional: Prepare prefix for the *next* chunk (Advanced)
+            # current_prefix_codes = model.autoencoder.encode(wav_out_chunk[:, :, -N:]) # Example
+
+        # --- Concatenate Audio Chunks ---
+        print("\nConcatenating audio chunks...")
+        if not all_wav_out_parts:
+             return jsonify({"error": "No audio parts were generated."}), 500
+
+        # Concatenate along the time dimension (dim=2 for shape [B, C, T])
+        wav_out = torch.cat(all_wav_out_parts, dim=2)
         sr_out = model.autoencoder.sampling_rate
+        print(f"Total audio length: {wav_out.shape[2] / sr_out:.2f} seconds (shape: {wav_out.shape})")
 
-        # Ensure mono and correct shape
-        if wav_out.dim() == 2 and wav_out.size(0) > 1:
-            wav_out = wav_out[0:1, :]
-        wav_numpy = wav_out.squeeze().numpy()
+        # Ensure mono and correct shape (should be [1, 1, T] after cat)
+        if wav_out.shape[0] != 1 or wav_out.shape[1] != 1:
+             print(f"Warning: Unexpected concatenated shape {wav_out.shape}, attempting to reshape.")
+             # Handle potential issues if batch/channel dims aren't 1
+             wav_out = wav_out.mean(dim=0, keepdim=True).mean(dim=1, keepdim=True) # Force to [1, 1, T]
+
+        wav_numpy = wav_out.squeeze().numpy() # Remove Batch and Channel dims -> shape (T,)
 
         # --- Convert float audio to 16-bit PCM ---
-        # Ensure data is within [-1.0, 1.0] range before scaling
         wav_numpy = np.clip(wav_numpy, -1.0, 1.0)
-        # Scale to int16 range
         wav_int16 = (wav_numpy * 32767).astype(np.int16)
         # --- End Conversion ---
 
         # Convert numpy array (int16) to WAV in memory
         wav_buffer = io.BytesIO()
-        # Use the converted int16 array here
         scipy.io.wavfile.write(wav_buffer, sr_out, wav_int16)
         wav_buffer.seek(0)
 
@@ -238,7 +267,6 @@ def text_to_speech():
             wav_buffer,
             mimetype='audio/wav',
             as_attachment=False # Send inline
-            # download_name='output.wav' # Use if as_attachment=True
         )
 
     except FileNotFoundError as e:
