@@ -234,136 +234,102 @@ def text_to_speech():
 
             # --- Decode to Waveform for the current chunk ---
             wav_out_chunk = model.autoencoder.decode(codes).cpu().detach()
-            all_wav_out_parts.append(wav_out_chunk)
-            print(f"Chunk {i+1} audio generated (shape: {wav_out_chunk.shape}).")
+            # --- Decode to Waveform for the current chunk ---
+            wav_out_chunk_tensor = model.autoencoder.decode(codes).cpu().detach()
+            print(f"Chunk {i+1} audio generated (shape: {wav_out_chunk_tensor.shape}).")
 
-            # Optional: Prepare prefix for the *next* chunk (Advanced)
-            # Optional: Prepare prefix for the *next* chunk (Advanced)
-            # current_prefix_codes = model.autoencoder.encode(wav_out_chunk[:, :, -N:]) # Example
+            # --- Trim the current chunk ---
+            sr_out = model.autoencoder.sampling_rate # Get sample rate (should be constant)
+            wav_numpy_chunk = wav_out_chunk_tensor.squeeze().cpu().numpy()
+            wav_numpy_chunk = np.clip(wav_numpy_chunk, -1.0, 1.0)
+            wav_int16_chunk = (wav_numpy_chunk * 32767).astype(np.int16)
 
-        # --- Process Output Based on combine_chunks Flag ---
-        if not all_wav_out_parts:
-             return jsonify({"error": "No audio parts were generated."}), 500
-
-        sr_out = model.autoencoder.sampling_rate # Get sampling rate
-
-        if combine_chunks:
-            # --- Concatenate Audio Chunks (Default Behavior) ---
-            print("\nCombining audio chunks...")
-            wav_out = torch.cat(all_wav_out_parts, dim=2) # Concatenate along time dim
-            print(f"Total combined audio length: {wav_out.shape[2] / sr_out:.2f} seconds (shape: {wav_out.shape})")
-
-            # Ensure mono and correct shape
-            if wav_out.shape[0] != 1 or wav_out.shape[1] != 1:
-                 print(f"Warning: Unexpected concatenated shape {wav_out.shape}, attempting to reshape.")
-                 wav_out = wav_out.mean(dim=0, keepdim=True).mean(dim=1, keepdim=True) # Force to [1, 1, T]
-
-            wav_numpy = wav_out.squeeze().numpy() # Shape (T,)
-
-            # Convert float audio to 16-bit PCM
-            wav_numpy = np.clip(wav_numpy, -1.0, 1.0)
-            wav_int16 = (wav_numpy * 32767).astype(np.int16)
-
-            # --- Trim the combined audio ---
             temp_in_file = None
             temp_out_file = None
-            wav_buffer = io.BytesIO() # Initialize buffer
+            trimmed_wav_data = None # To store the trimmed numpy array
             try:
-                # Create temporary files for input and output of trimming
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_in:
                     temp_in_file = temp_in.name
-                    # Write the *untrimmed* combined audio to the temp input file
-                    scipy.io.wavfile.write(temp_in_file, sr_out, wav_int16) 
+                    scipy.io.wavfile.write(temp_in_file, sr_out, wav_int16_chunk)
                 
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_out:
                     temp_out_file = temp_out.name
 
-                print(f"Trimming combined audio (temp in: {temp_in_file}, temp out: {temp_out_file})...")
-                # Call the trimmer
-                trim_tts_audio(temp_in_file, temp_out_file) 
-                print("Combined audio trimming complete.")
+                print(f"Trimming chunk {i+1}...")
+                trim_tts_audio(temp_in_file, temp_out_file)
+                print(f"Trimming chunk {i+1} complete.")
 
-                # Read the *trimmed* data into the buffer for sending
-                with open(temp_out_file, 'rb') as f_trimmed:
-                    wav_buffer.write(f_trimmed.read())
-                wav_buffer.seek(0)
-                print("Trimmed audio loaded into response buffer.")
+                # Read the trimmed data back as numpy array
+                sr_trimmed, trimmed_wav_data = scipy.io.wavfile.read(temp_out_file)
+                if sr_trimmed != sr_out:
+                    print(f"Warning: Sample rate mismatch after trimming chunk {i+1}. Expected {sr_out}, got {sr_trimmed}. Check AudioCleaner.")
+                    # Handle potential resampling or raise error if needed
+                print(f"Chunk {i+1} trimmed data loaded (shape: {trimmed_wav_data.shape}).")
 
             except Exception as trim_error:
-                print(f"Error trimming combined audio: {trim_error}")
-                # Fallback: Send the untrimmed audio if trimming fails
-                print("Trimming failed. Sending untrimmed audio as fallback.")
-                wav_buffer = io.BytesIO() # Reset buffer
-                scipy.io.wavfile.write(wav_buffer, sr_out, wav_int16) # Write original data
-                wav_buffer.seek(0)
+                print(f"Error trimming chunk {i+1}: {trim_error}. Using original chunk.")
+                # Fallback: Use the original untrimmed data if trimming fails
+                trimmed_wav_data = wav_int16_chunk 
             finally:
                 # Clean up temporary files
                 if temp_in_file and os.path.exists(temp_in_file):
                     os.remove(temp_in_file)
                 if temp_out_file and os.path.exists(temp_out_file):
                     os.remove(temp_out_file)
+            
+            # Store the (potentially trimmed) numpy array
+            if trimmed_wav_data is not None:
+                all_wav_out_parts.append(trimmed_wav_data)
+            else:
+                 print(f"Warning: Failed to get trimmed data for chunk {i+1}, skipping.")
             # --- End Trimming ---
 
-            # Send the (potentially trimmed) audio
+            # Optional: Prepare prefix for the *next* chunk (Advanced)
+            # Needs adjustment if using trimmed audio as prefix
+            # current_prefix_codes = model.autoencoder.encode(trimmed_wav_tensor...) 
+
+        # --- Process Output Based on combine_chunks Flag ---
+        if not all_wav_out_parts: # Now contains numpy arrays
+             return jsonify({"error": "No audio parts were generated or survived trimming."}), 500
+
+        sr_out = model.autoencoder.sampling_rate # Re-confirm sample rate
+
+        if combine_chunks:
+            # --- Concatenate PRE-TRIMMED Audio Chunks ---
+            print("\nCombining pre-trimmed audio chunks...")
+            # Concatenate the numpy arrays
+            final_wav_numpy = np.concatenate(all_wav_out_parts, axis=0) 
+            print(f"Total combined audio length: {len(final_wav_numpy) / sr_out:.2f} seconds (shape: {final_wav_numpy.shape})")
+
+            # Convert to WAV in memory
+            wav_buffer = io.BytesIO()
+            scipy.io.wavfile.write(wav_buffer, sr_out, final_wav_numpy.astype(np.int16)) # Ensure correct dtype
+            wav_buffer.seek(0)
+
+            print("Combined audio generation complete using pre-trimmed chunks.")
             return send_file(
-                wav_buffer, # This now contains trimmed data (or original if trimming failed)
+                wav_buffer,
                 mimetype='audio/wav',
                 as_attachment=False # Send inline
             )
         else:
-            # --- Return Multiple Chunks as ZIP ---
-            print("\nPackaging audio chunks into ZIP archive...")
+            # --- Return PRE-TRIMMED Multiple Chunks as ZIP ---
+            print("\nPackaging pre-trimmed audio chunks into ZIP archive...")
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                for i, wav_out_chunk in enumerate(all_wav_out_parts):
-                    # Process each chunk individually
-                    wav_numpy_chunk = wav_out_chunk.squeeze().cpu().numpy() # Shape (T,)
-                    wav_numpy_chunk = np.clip(wav_numpy_chunk, -1.0, 1.0)
-                    wav_int16_chunk = (wav_numpy_chunk * 32767).astype(np.int16)
+                for i, trimmed_wav_data in enumerate(all_wav_out_parts):
+                    # Write the trimmed numpy chunk to an in-memory WAV buffer
+                    chunk_buffer = io.BytesIO()
+                    scipy.io.wavfile.write(chunk_buffer, sr_out, trimmed_wav_data.astype(np.int16)) # Ensure correct dtype
+                    chunk_buffer.seek(0)
 
-                    # Write chunk to an in-memory WAV buffer
-                    # --- Trim the chunk before adding to ZIP ---
-                    temp_in_file = None
-                    temp_out_file = None
-                    try:
-                        # Create temporary files for input and output of trimming
-                        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_in:
-                            temp_in_file = temp_in.name
-                            scipy.io.wavfile.write(temp_in_file, sr_out, wav_int16_chunk)
-                        
-                        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_out:
-                            temp_out_file = temp_out.name
-
-                        print(f"Trimming chunk {i+1} (temp in: {temp_in_file}, temp out: {temp_out_file})...")
-                        # Call the trimmer - ignore return values for now
-                        trim_tts_audio(temp_in_file, temp_out_file) 
-                        print(f"Trimming chunk {i+1} complete.")
-
-                        # Read the *trimmed* data
-                        with open(temp_out_file, 'rb') as f_trimmed:
-                            trimmed_data = f_trimmed.read()
-
-                        # Add the *trimmed* chunk WAV to the ZIP file
-                        zip_filename = f"output_chunk_{i+1}_trimmed.wav" # Indicate trimmed
-                        zipf.writestr(zip_filename, trimmed_data)
-                        print(f"Added {zip_filename} to archive.")
-
-                    except Exception as trim_error:
-                        print(f"Error trimming chunk {i+1}: {trim_error}")
-                        # Fallback: Add the untrimmed chunk if trimming fails? Or skip?
-                        # For now, let's log and skip adding the failed chunk to avoid corrupting zip
-                        print(f"Skipping chunk {i+1} due to trimming error.")
-                    finally:
-                        # Clean up temporary files
-                        if temp_in_file and os.path.exists(temp_in_file):
-                            os.remove(temp_in_file)
-                        if temp_out_file and os.path.exists(temp_out_file):
-                            os.remove(temp_out_file)
-                    # --- End Trimming ---
-
+                    # Add the trimmed chunk WAV to the ZIP file
+                    zip_filename = f"output_chunk_{i+1}_trimmed.wav" 
+                    zipf.writestr(zip_filename, chunk_buffer.read())
+                    print(f"Added {zip_filename} (pre-trimmed) to archive.")
 
             zip_buffer.seek(0)
-            print("ZIP archive created.")
+            print("ZIP archive created with pre-trimmed chunks.")
             return send_file(
                 zip_buffer,
                 mimetype='application/zip',
