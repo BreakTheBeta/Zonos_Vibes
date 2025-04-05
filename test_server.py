@@ -11,7 +11,7 @@ SERVER_URL = "http://192.168.1.128:5000/tts"
 
 TEST_TEXT = "This is an integration test for the TTS server. End."
 TEST_TEXT = """
-Let me tell you the story when the level 600 school gyatt walked passed me, I was in class drinking my grimace rizz shake from ohio during my rizzonomics class when all of the sudden this crazy ohio bing chilling gyatt got sturdy, past my class. I was watching kai cenat hit the griddy on twitch. This is when I let my rizz take over and I became the rizzard of oz. I screamed, look at this bomboclat gyatt
+I have updated `test_server.py` to only test the combined WAV output scenario. The function for testing separate chunks `(run_test_separate_chunks)` has been removed, and the main part of the script now only executes the combined test `(run_test_combined)`, explicitly requesting combined output by setting `"combine_chunks": True` in the request payload.
 '"""
 
 # --- Speaker/Prefix ---
@@ -95,7 +95,7 @@ def run_test_combined():
         "min_p": TEST_MIN_P,
         # Model Choice (Assuming server handles default or has a way to specify)
         # "model_choice": "Zyphra/Zonos-v0.1-hybrid" # Example if needed
-        # "combine_chunks": True # Explicitly setting default for clarity (optional)
+        # "combine_chunks": True # Explicitly request combined output
     }
     # Filter out None values if prefix is optional server-side
     payload = {k: v for k, v in payload.items() if v is not None}
@@ -166,155 +166,7 @@ def run_test_combined():
         traceback.print_exc()
         return False
 
-def run_test_separate_chunks():
-    """Runs the integration test requesting separate WAV files in a ZIP."""
-    ensure_output_dir() # Make sure output dir exists
-    print(f"\n--- Running Test: Separate Chunks Output (ZIP) ---")
-    print(f"Target URL: {SERVER_URL}")
-
-    if not os.path.exists(TEST_SPEAKER_PATH):
-        print(f"Error: Test speaker audio file not found at '{TEST_SPEAKER_PATH}'.")
-        return False
-
-    payload = {
-        # Core
-        "text": TEST_TEXT, # Use the same long text to ensure chunking happens
-        "language": TEST_LANGUAGE,
-        "speaker_audio_path": TEST_SPEAKER_PATH,
-        "prefix_audio_path": TEST_PREFIX_PATH,
-        # Conditioning
-        "emotion": TEST_EMOTIONS,
-        "vq_score": TEST_VQ_SCORE,
-        "fmax": TEST_FMAX,
-        "pitch_std": TEST_PITCH_STD,
-        "speaking_rate": TEST_SPEAKING_RATE,
-        "dnsmos_ovrl": TEST_DNSMOS,
-        "speaker_noised": TEST_SPEAKER_NOISED,
-        # Generation
-        "cfg_scale": TEST_CFG_SCALE,
-        "seed": TEST_SEED,
-        "randomize_seed": TEST_RANDOMIZE_SEED, # Keep consistent for comparison if needed
-        "unconditional_keys": TEST_UNCONDITIONAL_KEYS,
-        # Sampling
-        "linear": TEST_LINEAR,
-        "confidence": TEST_CONFIDENCE,
-        "quadratic": TEST_QUADRATIC,
-        "top_p": TEST_TOP_P,
-        "top_k": TEST_TOP_K,
-        "min_p": TEST_MIN_P,
-        # --- Key Change: Request separate chunks ---
-        "combine_chunks": False
-    }
-    payload = {k: v for k, v in payload.items() if v is not None}
-
-    print(f"Sending POST request with payload (combine_chunks=False):")
-    print(json.dumps(payload, indent=2))
-
-    try:
-        response = requests.post(SERVER_URL, json=payload, timeout=120) # Increase timeout for potentially longer processing
-
-        # 1. Check Status Code
-        print(f"Received status code: {response.status_code}")
-        if response.status_code != 200:
-            print(f"Error: Expected status code 200, but got {response.status_code}")
-            try:
-                error_details = response.json()
-                print(f"Server error details: {error_details}")
-            except requests.exceptions.JSONDecodeError:
-                print(f"Server response content: {response.text}")
-            return False
-
-        # 2. Check Content-Type Header for ZIP
-        content_type = response.headers.get('Content-Type')
-        print(f"Received Content-Type: {content_type}")
-        if content_type != 'application/zip':
-            print(f"Error: Expected Content-Type 'application/zip', but got '{content_type}'")
-            return False
-
-        # 3. Check if content is non-empty
-        if not response.content:
-            print("Error: Received empty response content.")
-            return False
-        print(f"Received {len(response.content)} bytes of ZIP data.")
-
-        # 4. Validate ZIP content
-        try:
-            zip_buffer = io.BytesIO(response.content)
-            with zipfile.ZipFile(zip_buffer, 'r') as zipf:
-                print(f"Successfully opened response as ZIP file.")
-                file_list = zipf.namelist()
-                if not file_list:
-                    print("Error: ZIP file is empty.")
-                    return False
-                print(f"  Files in ZIP: {file_list}")
-
-                # Validate each file within the ZIP
-                for filename in file_list:
-                    if not filename.lower().endswith('.wav'):
-                        print(f"Error: File '{filename}' in ZIP is not a WAV file.")
-                        return False
-
-                    try:
-                        wav_data = zipf.read(filename)
-                        if not wav_data:
-                             print(f"Error: WAV file '{filename}' in ZIP is empty.")
-                             return False
-
-                        chunk_wav_buffer = io.BytesIO(wav_data)
-                        with wave.open(chunk_wav_buffer, 'rb') as wf_chunk:
-                            print(f"    Validated '{filename}': Channels={wf_chunk.getnchannels()}, Rate={wf_chunk.getframerate()}, Frames={wf_chunk.getnframes()}")
-                    except wave.Error as e_wav:
-                        print(f"Error: Could not validate WAV file '{filename}' within ZIP. Error: {e_wav}")
-                        return False
-                    except Exception as e_read:
-                         print(f"Error reading or processing file '{filename}' from ZIP. Error: {e_read}")
-                         return False
-
-        except zipfile.BadZipFile as e_zip:
-            print(f"Error: Could not open response content as a ZIP file. Error: {e_zip}")
-            return False
-        except Exception as e_zip_other:
-            print(f"Error processing ZIP file content. Error: {e_zip_other}")
-            return False
-
-
-        # 5. Save the output ZIP file and extract its contents
-        try:
-            # Save the ZIP itself
-            with open(OUTPUT_ZIP_FILENAME, 'wb') as f:
-                f.write(response.content)
-            print(f"Successfully saved received ZIP archive to '{OUTPUT_ZIP_FILENAME}'")
-
-            # Extract the contents of the saved ZIP into the outputs directory
-            print(f"Extracting contents of '{OUTPUT_ZIP_FILENAME}' to '{OUTPUTS_DIR}'...")
-            with zipfile.ZipFile(OUTPUT_ZIP_FILENAME, 'r') as zip_ref:
-                zip_ref.extractall(OUTPUTS_DIR)
-            print(f"Successfully extracted ZIP contents.")
-
-        except IOError as e:
-            print(f"Error: Could not save output ZIP file '{OUTPUT_ZIP_FILENAME}'. Error: {e}")
-            return False # Treat failure to save/extract as test failure
-        except zipfile.BadZipFile as e_zip:
-             print(f"Error: Failed to extract '{OUTPUT_ZIP_FILENAME}' (invalid ZIP). Error: {e_zip}")
-             return False
-        except Exception as e_extract:
-             print(f"Error during ZIP extraction. Error: {e_extract}")
-             return False
-
-
-        print("--- Separate Chunks Test Passed ---")
-        return True
-
-    except requests.exceptions.RequestException as e:
-        print(f"Error during request: {e}")
-        print("Is the server running at {SERVER_URL}?")
-        return False
-    except Exception as e:
-        print(f"An unexpected error occurred during the separate chunks test: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
+# Removed run_test_separate_chunks() function
 
 if __name__ == "__main__":
     # Optional: Clean previous outputs
@@ -322,17 +174,15 @@ if __name__ == "__main__":
     #     print(f"Removing previous output directory: {OUTPUTS_DIR}")
     #     shutil.rmtree(OUTPUTS_DIR)
 
-    print("Starting TTS Server Integration Tests...")
+    print("Starting TTS Server Integration Test (Combined Output Only)...")
     combined_test_passed = run_test_combined()
-    separate_chunks_test_passed = run_test_separate_chunks()
 
     print("\n--- Test Summary ---")
     print(f"Combined Output Test: {'PASSED' if combined_test_passed else 'FAILED'}")
-    print(f"Separate Chunks Test: {'PASSED' if separate_chunks_test_passed else 'FAILED'}")
 
-    if combined_test_passed and separate_chunks_test_passed:
-        print("\nAll integration tests completed successfully.")
+    if combined_test_passed:
+        print("\nIntegration test completed successfully.")
         exit(0)
     else:
-        print("\nOne or more integration tests failed.")
+        print("\nIntegration test failed.")
         exit(1) # Exit with a non-zero code to indicate failure

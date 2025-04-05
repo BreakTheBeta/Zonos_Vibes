@@ -19,8 +19,13 @@ def _base_clean_text(text: str) -> str:
     text = re.sub(r'\s+', ' ', text).strip()
 
     # 2. Replace markdown code blocks
-    text = re.sub(r'```.*?```', ' File: ', text, flags=re.DOTALL)
-    text = re.sub(r'`[^`]+`', ' File: ', text)
+    # Use a function for replacement to handle potential leading/trailing whitespace in capture
+    def replace_code_block(match):
+        content = match.group(1).strip() # Capture group 1 and strip whitespace
+        return f"File: {content}."
+
+    text = re.sub(r'```(.*?)```', replace_code_block, text, flags=re.DOTALL)
+    text = re.sub(r'`([^`]+)`', replace_code_block, text)
     text = re.sub(r'\s+', ' ', text).strip() # Normalize again
 
 
