@@ -5,7 +5,10 @@ import io
 
 # --- Configuration ---
 SERVER_URL = "http://192.168.1.128:5000/tts"
-TEST_TEXT = "This is an integration test for the TTS server."
+
+TEST_TEXT = "This is an integration test for the TTS server. End."
+TEST_TEXT = "Seriously, with this large of an explosive diarrhea dump the market has taken in the last 48 hours, there's no way to believe that big corporations are actually in charge of everything. Do we think they'd want their bottom line destroyed like this? If so then I guess they aren't that greedy after all. End."
+
 # Use an existing audio file in the project directory for the speaker
 TEST_SPEAKER_PATH = "short.wav"
 TEST_SPEAKING_RATE = 14.0
