@@ -8,7 +8,7 @@ import scipy.io.wavfile
 import os
 import numpy as np
 import json # Added for pretty printing request
-import numpy as np # Ensure numpy is imported
+import zipfile # Added for returning multiple files
 
 from TextCleaner import clean_and_split_text # Import the NEW cleaning and splitting function
 from zonos.model import Zonos
@@ -123,6 +123,9 @@ def text_to_speech():
         top_k = int(data.get('top_k', DEFAULT_TOP_K))
         min_p = float(data.get('min_p', DEFAULT_MIN_P))
 
+        # New flag to control output format
+        combine_chunks = data.get('combine_chunks', True) # Default to combining
+
     except (ValueError, TypeError) as e:
         return jsonify({"error": f"Invalid parameter type: {e}"}), 400
 
@@ -232,42 +235,72 @@ def text_to_speech():
             print(f"Chunk {i+1} audio generated (shape: {wav_out_chunk.shape}).")
 
             # Optional: Prepare prefix for the *next* chunk (Advanced)
+            # Optional: Prepare prefix for the *next* chunk (Advanced)
             # current_prefix_codes = model.autoencoder.encode(wav_out_chunk[:, :, -N:]) # Example
 
-        # --- Concatenate Audio Chunks ---
-        print("\nConcatenating audio chunks...")
+        # --- Process Output Based on combine_chunks Flag ---
         if not all_wav_out_parts:
              return jsonify({"error": "No audio parts were generated."}), 500
 
-        # Concatenate along the time dimension (dim=2 for shape [B, C, T])
-        wav_out = torch.cat(all_wav_out_parts, dim=2)
-        sr_out = model.autoencoder.sampling_rate
-        print(f"Total audio length: {wav_out.shape[2] / sr_out:.2f} seconds (shape: {wav_out.shape})")
+        sr_out = model.autoencoder.sampling_rate # Get sampling rate
 
-        # Ensure mono and correct shape (should be [1, 1, T] after cat)
-        if wav_out.shape[0] != 1 or wav_out.shape[1] != 1:
-             print(f"Warning: Unexpected concatenated shape {wav_out.shape}, attempting to reshape.")
-             # Handle potential issues if batch/channel dims aren't 1
-             wav_out = wav_out.mean(dim=0, keepdim=True).mean(dim=1, keepdim=True) # Force to [1, 1, T]
+        if combine_chunks:
+            # --- Concatenate Audio Chunks (Default Behavior) ---
+            print("\nCombining audio chunks...")
+            wav_out = torch.cat(all_wav_out_parts, dim=2) # Concatenate along time dim
+            print(f"Total combined audio length: {wav_out.shape[2] / sr_out:.2f} seconds (shape: {wav_out.shape})")
 
-        wav_numpy = wav_out.squeeze().numpy() # Remove Batch and Channel dims -> shape (T,)
+            # Ensure mono and correct shape
+            if wav_out.shape[0] != 1 or wav_out.shape[1] != 1:
+                 print(f"Warning: Unexpected concatenated shape {wav_out.shape}, attempting to reshape.")
+                 wav_out = wav_out.mean(dim=0, keepdim=True).mean(dim=1, keepdim=True) # Force to [1, 1, T]
 
-        # --- Convert float audio to 16-bit PCM ---
-        wav_numpy = np.clip(wav_numpy, -1.0, 1.0)
-        wav_int16 = (wav_numpy * 32767).astype(np.int16)
-        # --- End Conversion ---
+            wav_numpy = wav_out.squeeze().numpy() # Shape (T,)
 
-        # Convert numpy array (int16) to WAV in memory
-        wav_buffer = io.BytesIO()
-        scipy.io.wavfile.write(wav_buffer, sr_out, wav_int16)
-        wav_buffer.seek(0)
+            # Convert float audio to 16-bit PCM
+            wav_numpy = np.clip(wav_numpy, -1.0, 1.0)
+            wav_int16 = (wav_numpy * 32767).astype(np.int16)
 
-        print("Audio generation complete. Format: PCM 16-bit")
-        return send_file(
-            wav_buffer,
-            mimetype='audio/wav',
-            as_attachment=False # Send inline
-        )
+            # Convert to WAV in memory
+            wav_buffer = io.BytesIO()
+            scipy.io.wavfile.write(wav_buffer, sr_out, wav_int16)
+            wav_buffer.seek(0)
+
+            print("Combined audio generation complete. Format: PCM 16-bit")
+            return send_file(
+                wav_buffer,
+                mimetype='audio/wav',
+                as_attachment=False # Send inline
+            )
+        else:
+            # --- Return Multiple Chunks as ZIP ---
+            print("\nPackaging audio chunks into ZIP archive...")
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for i, wav_out_chunk in enumerate(all_wav_out_parts):
+                    # Process each chunk individually
+                    wav_numpy_chunk = wav_out_chunk.squeeze().cpu().numpy() # Shape (T,)
+                    wav_numpy_chunk = np.clip(wav_numpy_chunk, -1.0, 1.0)
+                    wav_int16_chunk = (wav_numpy_chunk * 32767).astype(np.int16)
+
+                    # Write chunk to an in-memory WAV buffer
+                    chunk_buffer = io.BytesIO()
+                    scipy.io.wavfile.write(chunk_buffer, sr_out, wav_int16_chunk)
+                    chunk_buffer.seek(0)
+
+                    # Add the chunk WAV to the ZIP file
+                    zip_filename = f"output_chunk_{i+1}.wav"
+                    zipf.writestr(zip_filename, chunk_buffer.read())
+                    print(f"Added {zip_filename} to archive.")
+
+            zip_buffer.seek(0)
+            print("ZIP archive created.")
+            return send_file(
+                zip_buffer,
+                mimetype='application/zip',
+                as_attachment=True, # Force download
+                download_name='audio_chunks.zip' # Suggest filename
+            )
 
     except FileNotFoundError as e:
         print(f"Error: {e}")
