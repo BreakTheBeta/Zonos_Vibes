@@ -7,11 +7,42 @@ import io
 SERVER_URL = "http://192.168.1.128:5000/tts"
 
 TEST_TEXT = "This is an integration test for the TTS server. End."
-TEST_TEXT = "Seriously, with this large of an explosive diarrhea dump the market has taken in the last 48 hours, there's no way to believe that big corporations are actually in charge of everything. Do we think they'd want their bottom line destroyed like this? If so then I guess they aren't that greedy after all. End."
+TEST_TEXT = """
+Fed only acts on hard data and predictions on hard data. They don't respond to politics. It's by design, if they did otherwise it would jeopardize fed independence. JPow made that point very clearly in the speech and I believe to address these sorts of calls to action.
+The fed isn't acting until blood is in the streets, one way or the other; and stagflation implies hike. End '
+'"""
 
-# Use an existing audio file in the project directory for the speaker
-TEST_SPEAKER_PATH = "short.wav"
-TEST_SPEAKING_RATE = 14.0
+# --- Speaker/Prefix ---
+TEST_SPEAKER_PATH = "short.wav" # Use an existing audio file for speaker cloning
+TEST_PREFIX_PATH = "assets/silence_100ms.wav" # Optional: Audio to continue from
+
+# --- Conditioning Parameters ---
+TEST_EMOTIONS = [1.0, 0.05, 0.05, 0.05, 0.05, 0.05, 0.1, 0.2] # Happiness, Sadness, Disgust, Fear, Surprise, Anger, Other, Neutral
+TEST_VQ_SCORE = 0.78
+TEST_FMAX = 24000.0
+TEST_PITCH_STD = 45.0
+TEST_SPEAKING_RATE = 15.0
+TEST_DNSMOS = 4.0
+TEST_SPEAKER_NOISED = False # Denoise speaker embedding?
+TEST_LANGUAGE = "en-us" # Language code
+
+# --- Generation Parameters ---
+TEST_CFG_SCALE = 2.0
+TEST_SEED = 420
+TEST_RANDOMIZE_SEED = True
+TEST_UNCONDITIONAL_KEYS = ["emotion"] # List of keys to make unconditional
+
+# --- Sampling Parameters ---
+# NovelAI Unified Sampler (set linear=0 to disable)
+TEST_LINEAR = 0.5
+TEST_CONFIDENCE = 0.40
+TEST_QUADRATIC = 0.00
+# Legacy Sampling (used if linear=0)
+TEST_TOP_P = 0.0
+TEST_TOP_K = 0 # Note: Gradio uses 'Min K', assuming it maps to top_k=0 if unused
+TEST_MIN_P = 0.0
+
+# --- Output ---
 OUTPUT_FILENAME = "test_output.wav" # Optional: Save the received audio
 
 def run_test():
@@ -26,11 +57,40 @@ def run_test():
         return False
 
     payload = {
+        # Core
         "text": TEST_TEXT,
+        "language": TEST_LANGUAGE,
         "speaker_audio_path": TEST_SPEAKER_PATH,
-        "speaking_rate": TEST_SPEAKING_RATE
+        "prefix_audio_path": TEST_PREFIX_PATH,
+        # Conditioning
+        "emotion": TEST_EMOTIONS,
+        "vq_score": TEST_VQ_SCORE,
+        "fmax": TEST_FMAX,
+        "pitch_std": TEST_PITCH_STD,
+        "speaking_rate": TEST_SPEAKING_RATE,
+        "dnsmos_ovrl": TEST_DNSMOS,
+        "speaker_noised": TEST_SPEAKER_NOISED,
+        # Generation
+        "cfg_scale": TEST_CFG_SCALE,
+        "seed": TEST_SEED,
+        "randomize_seed": TEST_RANDOMIZE_SEED,
+        "unconditional_keys": TEST_UNCONDITIONAL_KEYS,
+        # Sampling
+        "linear": TEST_LINEAR,
+        "confidence": TEST_CONFIDENCE,
+        "quadratic": TEST_QUADRATIC,
+        "top_p": TEST_TOP_P,
+        "top_k": TEST_TOP_K,
+        "min_p": TEST_MIN_P,
+        # Model Choice (Assuming server handles default or has a way to specify)
+        # "model_choice": "Zyphra/Zonos-v0.1-hybrid" # Example if needed
     }
-    print(f"Sending POST request with payload: {payload}")
+    # Filter out None values if prefix is optional server-side
+    payload = {k: v for k, v in payload.items() if v is not None}
+
+    print(f"Sending POST request with payload:")
+    import json
+    print(json.dumps(payload, indent=2)) # Pretty print the payload
 
     try:
         response = requests.post(SERVER_URL, json=payload, timeout=60) # Add timeout
