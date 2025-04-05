@@ -11,7 +11,7 @@ SERVER_URL = "http://192.168.1.128:5000/tts"
 
 TEST_TEXT = "This is an integration test for the TTS server. End."
 TEST_TEXT = """
-I have updated `test_server.py` to only test the combined WAV output scenario. The function for testing separate chunks `(run_test_separate_chunks)` has been removed, and the main part of the script now only executes the combined test `(run_test_combined)`, explicitly requesting combined output by setting `"combine_chunks": True` in the request payload.
+I've corrected the expectations in the failing unit tests in `test_text_cleaner.py`. The tests should now pass as they correctly reflect the behavior of the `_base_clean_text` function, which adds a period after each code block replacement. Please run `make test` again to confirm.
 '"""
 
 # --- Speaker/Prefix ---
@@ -32,7 +32,7 @@ TEST_LANGUAGE = "en-us" # Language code
 # --- Generation Parameters ---
 TEST_CFG_SCALE = 2.0
 TEST_SEED = 420
-TEST_RANDOMIZE_SEED = True
+TEST_RANDOMIZE_SEED = False
 TEST_UNCONDITIONAL_KEYS = ["emotion"] # List of keys to make unconditional
 
 # --- Sampling Parameters ---
