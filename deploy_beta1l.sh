@@ -51,28 +51,31 @@ ssh "$REMOTE_HOST" bash -s << EOF
   cd "$REMOTE_DIR" || { echo "[Remote] Error: Failed to change directory to $REMOTE_DIR"; exit 1; }
 
   # --- Pre-deployment Check & Stop ---
-  echo "[Remote] Checking for running server process before deployment..."
-  PID_TO_STOP=\$(pgrep -f "$SERVER_PATTERN" 2>/dev/null) || true
+  echo "[Remote] Checking for running server processes before deployment..."
+  # Define both patterns to kill
+  SPECIFIC_PATTERN="$SERVER_PATTERN" # Already defined: \.venv/bin/python3 server\.py
+  UV_PATTERN="uv run server\.py"     # The wrapper pattern
 
-  if [ -n "\$PID_TO_STOP" ]; then
-    echo "[Remote] Found running server (PID: \$PID_TO_STOP). Attempting to stop..."
-    # Try to kill the process gracefully first, then forcefully if needed
-    kill "\$PID_TO_STOP" 2>/dev/null || true
-    sleep 1 # Give it a moment to shut down
-    # Check if it's still running
-    if kill -0 "\$PID_TO_STOP" 2>/dev/null; then
-        echo "[Remote] Server \$PID_TO_STOP still running, sending SIGKILL..."
-        kill -9 "\$PID_TO_STOP" 2>/dev/null || true
-        sleep 1
-    fi
-    # Verify it's stopped
-    if pgrep -f "$SERVER_PATTERN" > /dev/null; then
-       echo "[Remote] Warning: Server process might still be running after kill attempts."
-    else
-       echo "[Remote] Server stopped successfully."
-    fi
+  echo "[Remote] Attempting to stop processes matching '$SPECIFIC_PATTERN' or '$UV_PATTERN'..."
+  # Use pkill -f to kill based on full command line pattern. Send SIGTERM first, then SIGKILL.
+  # The || true prevents the script from exiting if pkill finds no processes.
+  pkill -f "$SPECIFIC_PATTERN" || true
+  pkill -f "$UV_PATTERN" || true
+  sleep 1 # Give processes a moment to terminate
+
+  # Check if any are still running and send SIGKILL
+  if pgrep -f "$SPECIFIC_PATTERN" > /dev/null || pgrep -f "$UV_PATTERN" > /dev/null; then
+      echo "[Remote] Some server processes still running, sending SIGKILL..."
+      pkill -9 -f "$SPECIFIC_PATTERN" || true
+      pkill -9 -f "$UV_PATTERN" || true
+      sleep 1
+  fi
+
+  # Final verification
+  if pgrep -f "$SPECIFIC_PATTERN" > /dev/null || pgrep -f "$UV_PATTERN" > /dev/null; then
+      echo "[Remote] Warning: Server processes might still be running after kill attempts."
   else
-    echo "[Remote] Server not found running. Skipping stop step."
+      echo "[Remote] Server processes stopped successfully."
   fi
   # --- End Pre-deployment Check & Stop ---
 
