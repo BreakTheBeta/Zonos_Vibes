@@ -97,15 +97,18 @@ ssh "$REMOTE_HOST" bash -s -- "$STATUS_EXIT_CODE" << EOF
     echo "[Remote] Status check indicated server was not running. Skipping stop step."
   fi
 
-  # Ensure the status script itself is executable on the remote, in case it wasn't pulled/chmodded correctly before
-  echo "[Remote] Ensuring status script is executable..."
-  chmod +x ./get_status_of_beta1.sh || echo "[Remote] Warning: chmod failed for status script"
-
   echo "[Remote] Checking out branch: $BRANCH"
   git checkout "$BRANCH"
 
+  echo "[Remote] Discarding potential local changes to server.log..."
+  git checkout -- server.log || echo "[Remote] Warning: Failed to discard changes in server.log (maybe it wasn't changed?)"
+
   echo "[Remote] Pulling latest changes for branch $BRANCH from origin..."
   git pull origin "$BRANCH"
+
+  # Ensure the status script is executable *after* pulling changes
+  echo "[Remote] Ensuring status script is executable..."
+  chmod +x ./get_status_of_beta1.sh || echo "[Remote] Warning: chmod failed for status script"
 
   echo "[Remote] Syncing dependencies with uv..."
   $UV_CMD sync || { echo "[Remote] Error: uv sync failed."; exit 1; }
