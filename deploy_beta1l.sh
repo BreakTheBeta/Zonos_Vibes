@@ -25,8 +25,23 @@ fi
 
 echo "--- Deploying branch '$BRANCH' to $REMOTE_HOST ---"
 
+# Check current server status first using the dedicated script
+echo "--- Checking remote server status before deployment ---"
+# Make sure the status script is executable locally (might be needed if cloned fresh)
+chmod +x ./get_status_of_beta1.sh || echo "Warning: chmod failed for status script"
+./get_status_of_beta1.sh
+STATUS_EXIT_CODE=$? # Capture exit code (0=running, 1=not running, >1=error)
+echo "--- Status script exited with code: $STATUS_EXIT_CODE ---"
+
+# Handle potential errors from the status script itself
+if [ $STATUS_EXIT_CODE -gt 1 ]; then
+    echo "Error: Status check script failed with exit code $STATUS_EXIT_CODE. Aborting deployment." >&2
+    exit $STATUS_EXIT_CODE
+fi
+
 # Use SSH with a heredoc for clarity and better command handling
-ssh "$REMOTE_HOST" bash -s << EOF
+# Pass the status exit code as an argument ($1) to the remote script
+ssh "$REMOTE_HOST" bash -s -- "$STATUS_EXIT_CODE" << EOF
   # Attempt to source profile to get PATH settings
   if [ -f ~/.profile ]; then
     echo "[Remote] Sourcing ~/.profile..."
@@ -48,30 +63,42 @@ ssh "$REMOTE_HOST" bash -s << EOF
   # Ensure \$HOME is expanded correctly on the remote side
   cd "$REMOTE_DIR" || { echo "[Remote] Error: Failed to change directory to $REMOTE_DIR"; exit 1; }
 
-  echo "[Remote] Checking for running server process matching: $SERVER_PATTERN"
-  # Find the PID, redirect stderr to /dev/null, ignore exit code if not found
-  PID=\$(pgrep -f "$SERVER_PATTERN" 2>/dev/null) || true
+  # Retrieve the status code passed from the local script ($1 within the remote script)
+  REMOTE_STATUS_CODE=\$1
 
-  if [ -n "\$PID" ]; then
-    echo "[Remote] Found running server (PID: \$PID). Attempting to stop..."
-    # Try to kill the process gracefully first, then forcefully if needed
-    kill "\$PID" 2>/dev/null || true
-    sleep 1 # Give it a moment to shut down
-    # Check if it's still running
-    if kill -0 "\$PID" 2>/dev/null; then
-        echo "[Remote] Server \$PID still running, sending SIGKILL..."
-        kill -9 "\$PID" 2>/dev/null || true
-        sleep 1
-    fi
-    # Verify it's stopped
-    if pgrep -f "$SERVER_PATTERN" > /dev/null; then
-       echo "[Remote] Warning: Server process might still be running after kill attempts."
+  # Conditionally stop the server based on the status check performed *before* SSH
+  if [ "\$REMOTE_STATUS_CODE" -eq 0 ]; then
+    echo "[Remote] Status check indicated server was running. Attempting to stop..."
+    # Find the PID again (necessary as it's a new remote session)
+    PID=\$(pgrep -f "$SERVER_PATTERN" 2>/dev/null) || true
+    if [ -n "\$PID" ]; then
+        echo "[Remote] Found running server (PID: \$PID). Stopping..."
+        # Try to kill the process gracefully first, then forcefully if needed
+        kill "\$PID" 2>/dev/null || true
+        sleep 1 # Give it a moment to shut down
+        # Check if it's still running
+        if kill -0 "\$PID" 2>/dev/null; then
+            echo "[Remote] Server \$PID still running, sending SIGKILL..."
+            kill -9 "\$PID" 2>/dev/null || true
+            sleep 1
+        fi
+        # Verify it's stopped
+        if pgrep -f "$SERVER_PATTERN" > /dev/null; then
+           echo "[Remote] Warning: Server process might still be running after kill attempts."
+        else
+           echo "[Remote] Server stopped successfully."
+        fi
     else
-       echo "[Remote] Server stopped successfully."
+        # This case might happen if the server stopped between the status check and this command running
+        echo "[Remote] Warning: Status check indicated running, but no process found now."
     fi
   else
-    echo "[Remote] Server not found running."
+    echo "[Remote] Status check indicated server was not running. Skipping stop step."
   fi
+
+  # Ensure the status script itself is executable on the remote, in case it wasn't pulled/chmodded correctly before
+  echo "[Remote] Ensuring status script is executable..."
+  chmod +x ./get_status_of_beta1.sh || echo "[Remote] Warning: chmod failed for status script"
 
   echo "[Remote] Checking out branch: $BRANCH"
   git checkout "$BRANCH"
