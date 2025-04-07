@@ -26,6 +26,12 @@ fi
 
 echo "--- Deploying branch '$BRANCH' to $REMOTE_HOST ---"
 
+# --- Copy Stop Script ---
+echo "Copying stop_beta1l.sh to $REMOTE_HOST:$REMOTE_DIR..."
+scp ./stop_beta1l.sh "$REMOTE_HOST:$REMOTE_DIR/stop_beta1l.sh" || { echo "Error: Failed to copy stop_beta1l.sh"; exit 1; }
+echo "Stop script copied."
+# --- End Copy Stop Script ---
+
 # Use SSH with a heredoc for clarity and better command handling
 # Define patterns directly within the remote script to avoid argument passing issues
 ssh "$REMOTE_HOST" bash -s << EOF

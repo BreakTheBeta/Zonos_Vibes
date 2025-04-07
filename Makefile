@@ -1,5 +1,5 @@
 # Makefile for Zonos Vibes project
-.PHONY: test test_server deploy_beta1l list status
+.PHONY: test test_server deploy_beta1l stop_beta1l list status
 
 list:
 	@echo "Available make commands:"
@@ -18,6 +18,11 @@ deploy_beta1l:
 	$(eval BRANCH := $(shell git rev-parse --abbrev-ref HEAD))
 	@echo "Running deployment script for branch $(BRANCH)..."
 	./deploy_beta1l.sh $(BRANCH)
+
+# Stop the server on beta1l
+stop_beta1l:
+	@echo "Running stop script for beta1l..."
+	./stop_beta1l.sh
 
 # Get the status of the beta1l deployment
 status:
