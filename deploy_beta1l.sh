@@ -28,7 +28,8 @@ echo "--- Deploying branch '$BRANCH' to $REMOTE_HOST ---"
 
 # Use SSH with a heredoc for clarity and better command handling
 # Pass the patterns needed for pkill as arguments ($1, $2) to the remote script
-ssh "$REMOTE_HOST" bash -s -- "$SERVER_PATTERN" "uv run server\.py" << EOF
+# Use single quotes locally to prevent shell expansion of backslashes
+ssh "$REMOTE_HOST" bash -s -- "$SERVER_PATTERN" 'uv run server\.py' << EOF
   # Attempt to source profile to get PATH settings
   if [ -f ~/.profile ]; then
     echo "[Remote] Sourcing ~/.profile..."
