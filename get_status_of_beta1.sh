@@ -8,8 +8,8 @@ UV_CMD="uv"
 # Command used to start the server
 SERVER_CMD="$UV_CMD run server.py"
 # Pattern used to find the server process (escape special characters for pgrep/pkill)
-# Updated to match the actual process command found via 'ps aux'
-SERVER_PATTERN="server\.py"
+# Made more specific to avoid matching unrelated processes
+SERVER_PATTERN="\.venv/bin/python3 server\.py"
 REMOTE_PORT="5000" # Port the Flask server runs on
 HEALTH_ENDPOINT="http://localhost:$REMOTE_PORT/health"
 # --- End Configuration ---
