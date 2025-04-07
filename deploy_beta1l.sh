@@ -27,8 +27,8 @@ fi
 echo "--- Deploying branch '$BRANCH' to $REMOTE_HOST ---"
 
 # Use SSH with a heredoc for clarity and better command handling
-# The pre-deployment check is now done inside the remote script
-ssh "$REMOTE_HOST" bash -s << EOF
+# Pass the patterns needed for pkill as arguments ($1, $2) to the remote script
+ssh "$REMOTE_HOST" bash -s -- "$SERVER_PATTERN" "uv run server\.py" << EOF
   # Attempt to source profile to get PATH settings
   if [ -f ~/.profile ]; then
     echo "[Remote] Sourcing ~/.profile..."
@@ -50,29 +50,30 @@ ssh "$REMOTE_HOST" bash -s << EOF
   # Ensure \$HOME is expanded correctly on the remote side
   cd "$REMOTE_DIR" || { echo "[Remote] Error: Failed to change directory to $REMOTE_DIR"; exit 1; }
 
+  # Retrieve patterns from arguments
+  ARG_SPECIFIC_PATTERN="\$1"
+  ARG_UV_PATTERN="\$2"
+
   # --- Pre-deployment Check & Stop ---
   echo "[Remote] Checking for running server processes before deployment..."
-  # Define both patterns to kill
-  SPECIFIC_PATTERN="$SERVER_PATTERN" # Already defined: \.venv/bin/python3 server\.py
-  UV_PATTERN="uv run server\.py"     # The wrapper pattern
 
-  echo "[Remote] Attempting to stop processes matching '$SPECIFIC_PATTERN' or '$UV_PATTERN'..."
-  # Use pkill -f to kill based on full command line pattern. Send SIGTERM first, then SIGKILL.
+  echo "[Remote] Attempting to stop processes matching '\$ARG_SPECIFIC_PATTERN' or '\$ARG_UV_PATTERN'..."
+  # Use pkill -f with the patterns passed as arguments. Send SIGTERM first, then SIGKILL.
   # The || true prevents the script from exiting if pkill finds no processes.
-  pkill -f "$SPECIFIC_PATTERN" || true
-  pkill -f "$UV_PATTERN" || true
+  pkill -f "\$ARG_SPECIFIC_PATTERN" || true
+  pkill -f "\$ARG_UV_PATTERN" || true
   sleep 1 # Give processes a moment to terminate
 
   # Check if any are still running and send SIGKILL
-  if pgrep -f "$SPECIFIC_PATTERN" > /dev/null || pgrep -f "$UV_PATTERN" > /dev/null; then
+  if pgrep -f "\$ARG_SPECIFIC_PATTERN" > /dev/null || pgrep -f "\$ARG_UV_PATTERN" > /dev/null; then
       echo "[Remote] Some server processes still running, sending SIGKILL..."
-      pkill -9 -f "$SPECIFIC_PATTERN" || true
-      pkill -9 -f "$UV_PATTERN" || true
+      pkill -9 -f "\$ARG_SPECIFIC_PATTERN" || true
+      pkill -9 -f "\$ARG_UV_PATTERN" || true
       sleep 1
   fi
 
   # Final verification
-  if pgrep -f "$SPECIFIC_PATTERN" > /dev/null || pgrep -f "$UV_PATTERN" > /dev/null; then
+  if pgrep -f "\$ARG_SPECIFIC_PATTERN" > /dev/null || pgrep -f "\$ARG_UV_PATTERN" > /dev/null; then
       echo "[Remote] Warning: Server processes might still be running after kill attempts."
   else
       echo "[Remote] Server processes stopped successfully."
