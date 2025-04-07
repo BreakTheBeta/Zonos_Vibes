@@ -18,6 +18,9 @@ SCP-717 is sealed behind a titanium alloy vault door, lined with a plating of [R
 
 If the SCP-717 vault is breached from the far side, it is to be considered a hostile act. Communication with SCP-717 is to immediately cease and staff are to equip weapons to repel invaders. END.
 '"""
+TEST_TEXT = """
+I don't believe so, AD-394 could certainly be contributing to what we see in AD-644. I think AD-644 is more due to a single ad request having to wait for multiple (and larger) queries to complete before returning a response. Can the queries be run in parallel? They are hitting the same table though. The only workaround at the moment is to ask the retailer to split requests into multiple requests, one for each slot. Scaling up the Ads Replicas makes no real improvement.
+"""
 
 # --- Speaker/Prefix ---
 TEST_SPEAKER_PATH = "short.wav" # Use an existing audio file for speaker cloning
@@ -31,7 +34,7 @@ TEST_FMAX = 20000.0
 TEST_PITCH_STD = 45.0
 TEST_SPEAKING_RATE = 15.0
 TEST_DNSMOS = 4.0
-TEST_SPEAKER_NOISED = False # Denoise speaker embedding?
+TEST_SPEAKER_NOISED = True # Denoise speaker embedding?
 TEST_LANGUAGE = "en-us" # Language code
 
 # --- Generation Parameters ---
@@ -79,7 +82,7 @@ def run_test_combined():
         "speaker_audio_path": TEST_SPEAKER_PATH,
         "prefix_audio_path": TEST_PREFIX_PATH,
         # Conditioning
-        "emotion": TEST_EMOTIONS,
+        #"emotion": TEST_EMOTIONS,
         "vq_score": TEST_VQ_SCORE,
         "fmax": TEST_FMAX,
         "pitch_std": TEST_PITCH_STD,
@@ -90,7 +93,7 @@ def run_test_combined():
         "cfg_scale": TEST_CFG_SCALE,
         "seed": TEST_SEED,
         "randomize_seed": TEST_RANDOMIZE_SEED,
-        "unconditional_keys": TEST_UNCONDITIONAL_KEYS,
+        #"unconditional_keys": TEST_UNCONDITIONAL_KEYS,
         # Sampling
         "linear": TEST_LINEAR,
         "confidence": TEST_CONFIDENCE,

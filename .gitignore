@@ -16,5 +16,5 @@ wheels/
 short.wav
 test_output.wav
 
-
 outputs/*
+server.log
