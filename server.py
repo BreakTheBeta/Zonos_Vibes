@@ -195,7 +195,7 @@ def text_to_speech():
                 # Note: Reusing most parameters for each sentence.
                 # If per-sentence variation (e.g., emotion) is needed, modify here.
                 yield {
-                    "text": sentence_text.strip(),
+                    "text": sentence_text,
                     "speaker": speaker_embedding, # Use the loaded embedding
                     "language": language,
                     "emotion": emotion_list, # Pass the list directly
@@ -214,9 +214,12 @@ def text_to_speech():
             cond_dicts_generator=create_cond_generator(),
             # Define chunk schedule: start small, increase size (adjust based on hardware/latency needs)
             # Using the schedule from example.py as a starting point
-            chunk_schedule=[17, *range(9, 100)],
+            # chunk_schedule=[17, *range(9, 100)],
+            chunk_schedule=[25, *range(9, 150)],
             chunk_overlap=2, # From example.py
             cfg_scale=cfg_scale, # Pass generation params
+            whitespace=" ",
+            warmup_prefill=".End.",
             #unconditional_keys=unconditional_keys, # Pass uncond keys
             # Pass sampling params directly
             sampling_params=dict(
