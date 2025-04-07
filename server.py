@@ -93,6 +93,12 @@ def get_speaker_embedding(speaker_audio_path):
         print(f"Cached speaker embedding for: {speaker_audio_path}")
         return embedding
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Simple health check endpoint."""
+    # Could add more checks here later (e.g., model loaded status)
+    return jsonify({"status": "ok"}), 200
+
 @app.route('/tts', methods=['POST'])
 def text_to_speech():
     """
