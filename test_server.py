@@ -5,17 +5,18 @@ import io
 import zipfile # Added for handling ZIP responses
 import json # Added for pretty printing payload
 import shutil # For removing directory if needed
+import subprocess # Added for playing audio
 
 # --- Configuration ---
 SERVER_URL = "http://192.168.1.128:5000/tts"
 
 TEST_TEXT = "This is an integration test for the TTS server. End."
 TEST_TEXT = """
-No other items are to be placed on this table. If SCP-717-1 shows signs of movement, one staff member is to sit at the table and remain in the room with it. The staff member present must turn on the lamp and point at the word "WAIT" on the modified Ouija board, then immediately shut the lamp off. Staff is advised to remain quiet and breathe steadily until relieved.
+No other items are to be placed on this table. If SCP-717 shows signs of movement, one staff member is to sit at the table and remain in the room with it. The staff member present must turn on the lamp and point at the word "WAIT" on the modified Ouija board, then immediately shut the lamp off. Staff is advised to remain quiet and breathe steadily until relieved.
 
-SCP-717-2 is sealed behind a titanium alloy vault door, lined with a plating of [REDACTED] alloy. It is mounted on the wall behind SCP-717-1. The vault is to remain sealed per mutual agreement. If any whistling is heard from the vault, maintenance must be performed immediately to prevent a breach.
+SCP-717 is sealed behind a titanium alloy vault door, lined with a plating of [REDACTED] alloy. It is mounted on the wall behind SCP-717. The vault is to remain sealed per mutual agreement. If any whistling is heard from the vault, maintenance must be performed immediately to prevent a breach.
 
-If the SCP-717-2 vault is breached from the far side, it is to be considered a hostile act. Communication with SCP-717 is to immediately cease and staff are to equip weapons to repel invaders.
+If the SCP-717 vault is breached from the far side, it is to be considered a hostile act. Communication with SCP-717 is to immediately cease and staff are to equip weapons to repel invaders. END.
 '"""
 
 # --- Speaker/Prefix ---
@@ -30,7 +31,7 @@ TEST_FMAX = 20000.0
 TEST_PITCH_STD = 45.0
 TEST_SPEAKING_RATE = 15.0
 TEST_DNSMOS = 4.0
-TEST_SPEAKER_NOISED = True # Denoise speaker embedding?
+TEST_SPEAKER_NOISED = False # Denoise speaker embedding?
 TEST_LANGUAGE = "en-us" # Language code
 
 # --- Generation Parameters ---
@@ -108,7 +109,7 @@ def run_test_combined():
     print(json.dumps(payload, indent=2)) # Pretty print the payload
 
     try:
-        response = requests.post(SERVER_URL, json=payload, timeout=60) # Add timeout
+        response = requests.post(SERVER_URL, json=payload, timeout=180) # Increased timeout to 180 seconds
 
         # 1. Check Status Code
         print(f"Received status code: {response.status_code}")
@@ -152,6 +153,24 @@ def run_test_combined():
             with open(OUTPUT_FILENAME, 'wb') as f:
                 f.write(response.content)
             print(f"Successfully saved combined audio to '{OUTPUT_FILENAME}'")
+
+            # 6. Play the saved audio file
+            try:
+                print(f"Attempting to play audio file: '{OUTPUT_FILENAME}'")
+                # Use check=True to raise an exception if afplay fails
+                subprocess.run(["afplay", OUTPUT_FILENAME], check=True, capture_output=True)
+                print(f"Successfully played audio file.")
+            except FileNotFoundError:
+                print(f"Error: 'afplay' command not found. Is it installed and in your PATH?")
+                # Decide if this should be a test failure
+            except subprocess.CalledProcessError as e:
+                print(f"Error playing audio file with afplay: {e}")
+                print(f"afplay stderr: {e.stderr.decode()}")
+                # Decide if this should be a test failure
+            except Exception as e:
+                print(f"An unexpected error occurred during audio playback: {e}")
+                # Decide if this should be a test failure
+
         except IOError as e:
             print(f"Error: Could not save combined output file '{OUTPUT_FILENAME}'. Error: {e}")
             # Consider this a failure? For now, just warn.

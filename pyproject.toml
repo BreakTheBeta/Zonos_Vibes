@@ -23,6 +23,8 @@ dependencies = [
     "flask>=3.1.0",
     "scipy>=1.15.2",
     "nltk>=3.9.1",
+    "mcp[cli]>=1.6.0",
+    "httpx>=0.28.1",
 ]
 
 # These are technically optional, but mamba-ssm is required to run hybrid models.
