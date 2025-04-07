@@ -22,8 +22,10 @@ TEST_TEXT = """
 I don't believe so, AD-394 could certainly be contributing to what we see in AD-644. I think AD-644 is more due to a single ad request having to wait for multiple (and larger) queries to complete before returning a response. Can the queries be run in parallel? They are hitting the same table though. The only workaround at the moment is to ask the retailer to split requests into multiple requests, one for each slot. Scaling up the Ads Replicas makes no real improvement.
 """
 
+TEST_TEXT = "This is an integration test for the TTS server. End."
 # --- Speaker/Prefix ---
-TEST_SPEAKER_PATH = "short.wav" # Use an existing audio file for speaker cloning
+USE_SPEAKER_AUDIO = True # Set to False to omit speaker audio
+TEST_SPEAKER_PATH = "short.wav" # Use an existing audio file for speaker cloning (if USE_SPEAKER_AUDIO is True)
 TEST_PREFIX_PATH = "assets/silence_100ms.wav" # Optional: Audio to continue from
 
 # --- Conditioning Parameters ---
@@ -69,17 +71,25 @@ def run_test_combined():
     print(f"\n--- Running Test: Combined Output (Default) ---")
     print(f"Target URL: {SERVER_URL}")
 
-    # Verify the speaker audio file exists before sending the request
-    if not os.path.exists(TEST_SPEAKER_PATH):
-        print(f"Error: Test speaker audio file not found at '{TEST_SPEAKER_PATH}'.")
-        print("Please ensure the file exists in the same directory as the test script or provide the correct path.")
-        return False
+    # Conditionally verify the speaker audio file
+    if USE_SPEAKER_AUDIO:
+        if not TEST_SPEAKER_PATH:
+             print(f"Error: USE_SPEAKER_AUDIO is True, but TEST_SPEAKER_PATH is empty.")
+             return False
+        if not os.path.exists(TEST_SPEAKER_PATH):
+            print(f"Error: USE_SPEAKER_AUDIO is True, but speaker audio file not found at '{TEST_SPEAKER_PATH}'.")
+            print("Please ensure the file exists or set USE_SPEAKER_AUDIO to False.")
+            return False
+        print(f"Using speaker audio: '{TEST_SPEAKER_PATH}'")
+    else:
+        print("Skipping speaker audio as USE_SPEAKER_AUDIO is False.")
+
 
     payload = {
         # Core
         "text": TEST_TEXT,
         "language": TEST_LANGUAGE,
-        "speaker_audio_path": TEST_SPEAKER_PATH,
+        "speaker_audio_path": None, # Initialize to None, conditionally updated below
         "prefix_audio_path": TEST_PREFIX_PATH,
         # Conditioning
         #"emotion": TEST_EMOTIONS,
@@ -105,8 +115,24 @@ def run_test_combined():
         # "model_choice": "Zyphra/Zonos-v0.1-hybrid" # Example if needed
         # "combine_chunks": True # Explicitly request combined output
     }
-    # Filter out None values if prefix is optional server-side
+
+    # Set the speaker path based on USE_SPEAKER_AUDIO
+    if USE_SPEAKER_AUDIO and TEST_SPEAKER_PATH and os.path.exists(TEST_SPEAKER_PATH):
+        payload["speaker_audio_path"] = TEST_SPEAKER_PATH
+    elif USE_SPEAKER_AUDIO:
+         # Error condition already handled earlier, but set to default silence as fallback
+         print(f"Warning: USE_SPEAKER_AUDIO is True, but speaker path '{TEST_SPEAKER_PATH}' is invalid/missing. Using default silence.")
+         payload["speaker_audio_path"] = "assets/silence_100ms.wav" # Default silence
+    else:
+        # USE_SPEAKER_AUDIO is False, use default silence path
+        print(f"USE_SPEAKER_AUDIO is False. Using default silence for speaker_audio_path.")
+        payload["speaker_audio_path"] = "assets/silence_100ms.wav" # Default silence
+
+
+    # Filter out None values for other keys (like prefix_audio_path if it were optional)
+    # speaker_audio_path should now always have a valid string path
     payload = {k: v for k, v in payload.items() if v is not None}
+
 
     print(f"Sending POST request with payload:")
     print(json.dumps(payload, indent=2)) # Pretty print the payload
