@@ -8,7 +8,8 @@ UV_CMD="uv"
 # Command used to start the server
 SERVER_CMD="$UV_CMD run server.py"
 # Pattern used to find the server process (escape special characters for pgrep/pkill)
-SERVER_PATTERN="$UV_CMD run server\.py"
+# Updated to match the actual process command found via 'ps aux'
+SERVER_PATTERN="server\.py"
 # --- End Configuration ---
 
 echo "--- Checking status of server on $REMOTE_HOST ---"
