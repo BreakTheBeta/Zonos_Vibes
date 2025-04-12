@@ -7,9 +7,13 @@ from client import TTSClient, TTSClientError, play_audio_bytes # Import from new
 SERVER_URL = "http://192.168.1.128:5000/tts" # Keep server URL config
 
 TEST_TEXT = """
-Yo watching both of them discuss if *insert entity* is fascist or not, while neither of them has an actual clear definition of the word fascism FOR LITERALLY AN HOUR+ was annoying. Therefore for the sake of saving time in the future i'll make this effort post! I'll try to discuss fascism here and give some clear insight into what modern academics understand the term fascism to mean... (edit = writing mistakes and minor elaboration)
+Everything is priced in, don't even ask the question. The answer is yes—it's priced in. Think Amazon will beat the next earnings? That's already been priced in. You work at the drive-thru for Mickey D's and found out that the burgers are made of human meat? Priced in. You think insiders don't already know that? The market is an all-powerful, all-encompassing being that knows the very inner workings of your subconscious before you were even born.
 
-(first of all a little preface: i'm a history student currently doing my master's thesis, while my masters is not related to fascism at all i wrote my bachelor's thesis on Russian fascism and Eurasianism. Due to that and some courses I've taken i believe i have the ability to at least provide some clarity around the question "is trump a fascist". Also English is my second language so be kind!
+Your very existence was priced in decades ago when the market was valuing Standard Oil's expected future earnings based on population growth that would lead to your birth. It considered what age you'd get a car, how many times you'd drive your car every week, and how many times you'd take the bus or train. Anything you can think of has already been priced in—even the things you aren't thinking of.
+
+You have no original thoughts. Your consciousness is just an illusion, a product of the omniscient market. Free will is a myth. The market sees all, knows all, and will be there from the beginning of time until the end of the universe (the market has already priced in the heat death of the universe).
+
+So, before you make a post on WSB asking whether AAPL has priced in earpod 11 sales or whatever—know that it's already been priced in. And don't ask such a dumb fucking question again.
 """
 
 # --- Test Specific Configuration ---
