@@ -1,0 +1,26 @@
+# Zonos Vibes Server Management (beta1l)
+
+## Deployment
+
+-   **Script:** `./deploy_beta1l.sh <branch_name>`
+-   **Action:** Deploys the specified branch to `beta1l`. Stops existing server processes, pulls latest code, syncs dependencies (`uv sync`), and restarts the server (`uv run server.py`) in the background via `nohup`. Output logged to `server.log` on `beta1l`.
+-   **Requires:** SSH access to `beta1l` configured.
+
+## Checking Status
+
+-   **Script:** `./get_status_of_beta1.sh`
+-   **Action:** Checks if the server process is running on `beta1l` and if the `/health` endpoint (`http://localhost:5000/health`) is responding with HTTP 200.
+-   **Output:** Reports Process (RUNNING/NOT_RUNNING) and Health (HEALTHY/UNHEALTHY/UNREACHABLE/etc.).
+
+## Testing
+
+-   **Script:** `uv run python test_server.py`
+-   **Action:** Runs integration tests against the server specified in the script (currently `http://192.168.1.128:5000`). Verifies the `/tts` endpoint functionality.
+
+## Gotchas / Lessons Learned
+
+1.  **Process Identification:** The server runs as `.venv/bin/python3 server.py`, not directly `uv run server.py`. Use `pgrep -f '\.venv/bin/python3 server\.py'` for reliable process detection.
+2.  **Stopping Server:** `uv run` might leave multiple processes. Use `pkill -f` with patterns for both the specific python process (`\.venv/bin/python3 server\.py`) and the wrapper (`uv run server\.py`) in the deploy script to ensure a clean stop.
+3.  **Deployment Conflicts:** `git pull` can fail if `server.log` has uncommitted changes. The deploy script now discards changes to `server.log` (`git checkout -- server.log`) before pulling.
+4.  **Health Check Timing:** The `/health` endpoint is only available *after* successful deployment. Status checks performed *during* deployment should only verify process status (`pgrep`), not the health endpoint. The manual status script (`get_status_of_beta1.sh`) checks both.
+5.  **Server Startup Time:** The server (Flask + Zonos model) might take a few seconds to initialize and bind to the port after being launched. A "Connection refused" error immediately after deployment might resolve itself shortly after.
