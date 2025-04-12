@@ -1,3 +1,8 @@
+# About
+
+The goal of this repo is to create an immaculate vibe coding experience using open source repos and models.
+
+
 # Zonos-v0.1
 
 <div align="center">
