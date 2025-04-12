@@ -225,7 +225,7 @@ def text_to_speech():
             chunk_overlap=2, # From example.py
             cfg_scale=cfg_scale, # Pass generation params
             whitespace=" ",
-            warmup_prefill=".End.",
+            # warmup_prefill=".End.",
             #unconditional_keys=unconditional_keys, # Pass uncond keys
             # Pass sampling params directly
             sampling_params=dict(
