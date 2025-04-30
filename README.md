@@ -1,3 +1,8 @@
+# About
+
+The goal of this repo is to create an immaculate vibe coding experience using open source repos and models.
+
+
 # Zonos-v0.1
 
 <div align="center">
@@ -15,6 +20,8 @@
 </div>
 
 ---
+
+Test 
 
 Zonos-v0.1 is a leading open-weight text-to-speech model trained on more than 200k hours of varied multilingual speech, delivering expressiveness and quality on par with—or even surpassing—top TTS providers.
 

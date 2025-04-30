@@ -1,102 +1,104 @@
-import requests
 import os
-import wave
-import io
+import shutil
+import requests # Keep for RequestException handling
+from client import TTSClient, TTSClientError, play_audio_bytes # Import from new client module
 
 # --- Configuration ---
-SERVER_URL = "http://192.168.1.128:5000/tts"
+SERVER_URL = "http://192.168.1.128:5000/tts" # Keep server URL config
 
-TEST_TEXT = "This is an integration test for the TTS server. End."
-TEST_TEXT = "Seriously, with this large of an explosive diarrhea dump the market has taken in the last 48 hours, there's no way to believe that big corporations are actually in charge of everything. Do we think they'd want their bottom line destroyed like this? If so then I guess they aren't that greedy after all. End."
+TEST_TEXT = """
+Everything is priced in, don't even ask the question. The answer is yes—it's priced in. Think Amazon will beat the next earnings? That's already been priced in. You work at the drive-thru for Mickey D's and found out that the burgers are made of human meat? Priced in. You think insiders don't already know that? The market is an all-powerful, all-encompassing being that knows the very inner workings of your subconscious before you were even born.
 
-# Use an existing audio file in the project directory for the speaker
-TEST_SPEAKER_PATH = "short.wav"
-TEST_SPEAKING_RATE = 14.0
-OUTPUT_FILENAME = "test_output.wav" # Optional: Save the received audio
+Your very existence was priced in decades ago when the market was valuing Standard Oil's expected future earnings based on population growth that would lead to your birth. It considered what age you'd get a car, how many times you'd drive your car every week, and how many times you'd take the bus or train. Anything you can think of has already been priced in—even the things you aren't thinking of.
 
-def run_test():
-    """Runs the integration test against the running TTS server."""
-    print(f"--- Running TTS Server Integration Test ---")
-    print(f"Target URL: {SERVER_URL}")
+You have no original thoughts. Your consciousness is just an illusion, a product of the omniscient market. Free will is a myth. The market sees all, knows all, and will be there from the beginning of time until the end of the universe (the market has already priced in the heat death of the universe).
 
-    # Verify the speaker audio file exists before sending the request
-    if not os.path.exists(TEST_SPEAKER_PATH):
-        print(f"Error: Test speaker audio file not found at '{TEST_SPEAKER_PATH}'.")
-        print("Please ensure the file exists in the same directory as the test script or provide the correct path.")
-        return False
+So, before you make a post on WSB asking whether AAPL has priced in earpod 11 sales or whatever—know that it's already been priced in. And don't ask such a dumb fucking question again.
+"""
 
-    payload = {
-        "text": TEST_TEXT,
-        "speaker_audio_path": TEST_SPEAKER_PATH,
-        "speaking_rate": TEST_SPEAKING_RATE
-    }
-    print(f"Sending POST request with payload: {payload}")
+# --- Test Specific Configuration ---
+USE_SPEAKER_AUDIO = True # Override client default (False) for this test
+TEST_SPEAKER_PATH = "short_2.wav" # Specify the speaker audio for this test
+
+# --- Output ---
+OUTPUTS_DIR = "outputs"
+# Note: Most other parameters now use defaults defined in client.py
+OUTPUT_FILENAME = os.path.join(OUTPUTS_DIR, "test_output_client.wav") # Updated filename
+
+def ensure_output_dir():
+    """Creates the output directory if it doesn't exist."""
+    os.makedirs(OUTPUTS_DIR, exist_ok=True)
+    print(f"Ensured output directory exists: '{OUTPUTS_DIR}'")
+
+def run_test_with_client():
+    """Runs the integration test using the TTSClient."""
+    ensure_output_dir()
+    print(f"\n--- Running Test via TTSClient ---")
+
+    client = TTSClient(SERVER_URL)
 
     try:
-        response = requests.post(SERVER_URL, json=payload, timeout=60) # Add timeout
+        # Call the client's synthesize method.
+        # Most parameters will use the defaults set in client.py.
+        # We only need to specify parameters that differ from the defaults
+        # or are required (like text).
+        audio_bytes = client.synthesize(
+            text=TEST_TEXT,
+            use_speaker_audio=USE_SPEAKER_AUDIO, # Explicitly True for this test
+            speaker_audio_path=TEST_SPEAKER_PATH  # Explicitly set for this test
+            # All other parameters (language, prefix, conditioning, generation, sampling)
+            # will use the defaults defined in the TTSClient.synthesize method.
+        )
 
-        # 1. Check Status Code
-        print(f"Received status code: {response.status_code}")
-        if response.status_code != 200:
-            print(f"Error: Expected status code 200, but got {response.status_code}")
-            try:
-                error_details = response.json()
-                print(f"Server error details: {error_details}")
-            except requests.exceptions.JSONDecodeError:
-                print(f"Server response content: {response.text}")
-            return False
+        print("--- Synthesis Request Successful ---")
 
-        # 2. Check Content-Type Header
-        content_type = response.headers.get('Content-Type')
-        print(f"Received Content-Type: {content_type}")
-        if content_type != 'audio/wav':
-            print(f"Error: Expected Content-Type 'audio/wav', but got '{content_type}'")
-            return False
-
-        # 3. Check if content is non-empty
-        if not response.content:
-            print("Error: Received empty response content.")
-            return False
-        print(f"Received {len(response.content)} bytes of audio data.")
-
-        # 4. (Optional but recommended) Basic WAV validation
-        try:
-            wav_buffer = io.BytesIO(response.content)
-            with wave.open(wav_buffer, 'rb') as wf:
-                print(f"Successfully opened response as WAV file.")
-                print(f"  Format: {wf.getcompname()}")
-                print(f"  Channels: {wf.getnchannels()}")
-                print(f"  Frame Rate: {wf.getframerate()}")
-                print(f"  Frames: {wf.getnframes()}")
-        except wave.Error as e:
-            print(f"Error: Could not validate response content as a WAV file. Error: {e}")
-            return False
-
-        # 5. (Optional) Save the output file
+        # Save the output file
         try:
             with open(OUTPUT_FILENAME, 'wb') as f:
-                f.write(response.content)
-            print(f"Successfully saved received audio to '{OUTPUT_FILENAME}'")
+                f.write(audio_bytes)
+            print(f"Successfully saved client audio output to '{OUTPUT_FILENAME}'")
+
+            # Play the saved audio file using the client's helper.
+            # This will create a separate temporary file for playback and delete it,
+            # leaving OUTPUT_FILENAME untouched.
+            play_audio_bytes(audio_bytes)
+
         except IOError as e:
-            print(f"Warning: Could not save output file '{OUTPUT_FILENAME}'. Error: {e}")
+            print(f"Error: Could not save client output file '{OUTPUT_FILENAME}'. Error: {e}")
+            # Decide if this should be a test failure
 
+        return True # Indicate success
 
-        print("--- Test Passed ---")
-        return True
-
+    except TTSClientError as e:
+        print(f"TTS Client Error: {e}")
+        return False # Indicate failure
     except requests.exceptions.RequestException as e:
-        print(f"Error during request: {e}")
-        print("Is the server running at {SERVER_URL}?")
-        return False
+        # Catch potential network errors not handled within the client's synthesize
+        print(f"Network Error during request: {e}")
+        print(f"Is the server running at {client.server_url}?")
+        return False # Indicate failure
     except Exception as e:
-        print(f"An unexpected error occurred during the test: {e}")
+        print(f"An unexpected error occurred during the client test: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        return False # Indicate failure
+
 
 if __name__ == "__main__":
-    if run_test():
+    # Optional: Clean previous outputs
+    # if os.path.exists(OUTPUTS_DIR):
+    #     print(f"Removing previous output directory: {OUTPUTS_DIR}")
+    #     shutil.rmtree(OUTPUTS_DIR)
+
+    print("Starting TTS Server Integration Test via Client...")
+    test_passed = run_test_with_client()
+
+    print("\n--- Test Summary ---")
+    print(f"Client Test: {'PASSED' if test_passed else 'FAILED'}")
+
+    if test_passed:
         print("\nIntegration test completed successfully.")
+        exit(0)
     else:
         print("\nIntegration test failed.")
-        exit(1) # Exit with a non-zero code to indicate failure
+        exit(1)
